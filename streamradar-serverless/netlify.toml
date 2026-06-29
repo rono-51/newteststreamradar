@@ -1,0 +1,46 @@
+# netlify.toml — Configuración del proyecto StreamRadar Serverless
+# ──────────────────────────────────────────────────────────────────
+
+[build]
+  # Directorio de archivos estáticos públicos (frontend)
+  publish   = "public"
+  # Directorio donde viven las Netlify Functions
+  functions = "netlify/functions"
+
+[build.environment]
+  # Node.js 20 LTS para las funciones serverless
+  NODE_VERSION = "20"
+
+# ── Reglas de redirección ──────────────────────────────────────────
+# Las requests a /api/* se redirigen a las funciones serverless
+[[redirects]]
+  from   = "/api/send-alert"
+  to     = "/.netlify/functions/send-alert"
+  status = 200
+
+[[redirects]]
+  from   = "/api/telegram-webhook"
+  to     = "/.netlify/functions/telegram-webhook"
+  status = 200
+
+# SPA fallback: cualquier ruta no encontrada sirve index.html
+[[redirects]]
+  from   = "/*"
+  to     = "/index.html"
+  status = 200
+
+# ── Headers de seguridad para el frontend ─────────────────────────
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options         = "SAMEORIGIN"
+    X-Content-Type-Options  = "nosniff"
+    Referrer-Policy         = "strict-origin-when-cross-origin"
+    Permissions-Policy      = "camera=(), microphone=(), geolocation=()"
+    Content-Security-Policy = "default-src 'self' https://telegram.org https://*.telegram.org wss://ws-us2.pusher.com https://kick.com; script-src 'self' 'unsafe-inline' https://telegram.org; style-src 'self' 'unsafe-inline';"
+
+# Headers para el Service Worker (debe servirse sin caché)
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache, no-store, must-revalidate"

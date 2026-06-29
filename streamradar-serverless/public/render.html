@@ -1,0 +1,1358 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>StreamRadar — Render Studio</title>
+<style>
+/* ════════════════════════════════════════════════════
+   TOKENS + RESET
+════════════════════════════════════════════════════ */
+:root {
+  --bg:      #080b0f;
+  --surf:    #111720;
+  --surf2:   #1a2330;
+  --border:  #1e2d3d;
+  --green:   #53fc18;
+  --gdim:    #1c5208;
+  --blue:    #29b6f6;
+  --red:     #ef4444;
+  --orange:  #f59e0b;
+  --text:    #dde4ee;
+  --muted:   #556070;
+  --r:       8px;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg); color: var(--text);
+  min-height: 100vh; overflow-x: hidden;
+}
+
+/* ════════════════════════════════════════════════════
+   TOPBAR
+════════════════════════════════════════════════════ */
+.topbar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 0 16px; height: 50px;
+  background: var(--surf); border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 200;
+}
+.topbar-brand { font-weight: 800; font-size: .93rem; color: var(--green); flex: 1; }
+.btn-sm {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: var(--surf2); border: 1px solid var(--border);
+  color: var(--text); padding: 6px 13px;
+  border-radius: var(--r); font-size: .78rem; cursor: pointer;
+  text-decoration: none; transition: background .15s, border-color .15s;
+  white-space: nowrap;
+}
+.btn-sm:hover { background: #1d2e40; border-color: var(--green); }
+
+/* ════════════════════════════════════════════════════
+   STUDIO LAYOUT  (panel izq + preview der)
+════════════════════════════════════════════════════ */
+.studio {
+  display: grid;
+  grid-template-columns: minmax(300px, 420px) 1fr;
+  min-height: calc(100vh - 50px);
+}
+
+/* ── PANEL CONTROLES ── */
+.panel-ctrl {
+  padding: 16px; overflow-y: auto;
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column; gap: 12px;
+}
+
+/* Dropzone */
+.dz {
+  border: 2px dashed var(--green);
+  border-radius: var(--r); padding: 20px;
+  text-align: center; cursor: pointer;
+  background: rgba(83,252,24,.03);
+  transition: background .2s;
+}
+.dz:hover, .dz.over { background: rgba(83,252,24,.08); }
+.dz .dz-icon { font-size: 1.8rem; margin-bottom: 5px; display: block; }
+.dz .dz-text { font-size: .82rem; color: var(--muted); }
+.dz .dz-text strong { color: var(--green); }
+.dz input { display: none; }
+
+/* Section */
+.sec {
+  background: var(--surf); border: 1px solid var(--border);
+  border-radius: var(--r); padding: 13px;
+  display: flex; flex-direction: column; gap: 9px;
+}
+.sec-title {
+  font-size: .68rem; text-transform: uppercase;
+  letter-spacing: 1px; color: var(--green); font-weight: 700;
+  margin-bottom: 2px;
+}
+
+/* Field */
+.field { display: flex; flex-direction: column; gap: 3px; }
+.field label { font-size: .68rem; color: var(--muted); text-transform: uppercase; letter-spacing: .4px; }
+.field input[type=text],
+.field select {
+  background: var(--surf2); border: 1px solid var(--border);
+  color: var(--text); padding: 7px 9px;
+  border-radius: 6px; font-size: .83rem; width: 100%;
+}
+.field input[type=text]:focus,
+.field select:focus { outline: none; border-color: var(--green); }
+
+/* Checkbox */
+.chk {
+  display: flex; align-items: center; gap: 7px;
+  font-size: .82rem; cursor: pointer;
+}
+.chk input { width: 15px; height: 15px; accent-color: var(--green); cursor: pointer; }
+
+/* Slider row */
+.sl-row {
+  display: flex; align-items: center; gap: 7px; font-size: .77rem;
+}
+.sl-row label { color: var(--muted); min-width: 55px; }
+.sl-row input[type=range] { flex: 1; accent-color: var(--green); }
+.sl-row .sv {
+  font-family: monospace; font-size: .74rem;
+  color: var(--green); min-width: 38px; text-align: right;
+}
+.sl-hint { font-size: .68rem; color: var(--muted); margin-top: -2px; }
+
+/* ── EXPORT SECTION ── */
+.btn-export {
+  width: 100%; padding: 13px;
+  background: var(--green); color: #000;
+  border: none; border-radius: var(--r);
+  font-size: .92rem; font-weight: 800;
+  cursor: pointer; text-transform: uppercase; letter-spacing: .5px;
+  transition: opacity .15s; position: relative;
+}
+.btn-export:hover  { opacity: .88; }
+.btn-export:disabled { background: var(--gdim); color: #2a5010; cursor: not-allowed; opacity: 1; }
+
+/* Barra de progreso */
+.prog-wrap {
+  display: none; flex-direction: column; gap: 5px;
+}
+.prog-wrap.visible { display: flex; }
+.prog-bar-track {
+  width: 100%; height: 8px;
+  background: var(--surf2); border-radius: 4px; overflow: hidden;
+  border: 1px solid var(--border);
+}
+.prog-bar-fill {
+  height: 100%; width: 0%;
+  background: var(--green);
+  border-radius: 4px;
+  transition: width .25s linear;
+}
+.prog-label {
+  display: flex; justify-content: space-between;
+  font-size: .72rem; color: var(--muted); font-family: monospace;
+}
+
+/* Status + error */
+.status-box {
+  display: none; padding: 9px 11px;
+  border-radius: var(--r); font-size: .8rem;
+  border: 1px solid; word-break: break-word;
+}
+.status-box.ok    { background: rgba(83,252,24,.07);  border-color: var(--green);  color: var(--green);  display: block; }
+.status-box.err   { background: rgba(239,68,68,.08);  border-color: var(--red);    color: var(--red);    display: block; }
+.status-box.info  { background: rgba(41,182,246,.07); border-color: var(--blue);   color: var(--blue);   display: block; }
+.status-box.warn  { background: rgba(245,158,11,.07); border-color: var(--orange); color: var(--orange); display: block; }
+
+/* Botón descargar (aparece cuando hay blob) */
+.btn-dl {
+  display: none; width: 100%; padding: 11px;
+  background: var(--surf2); border: 1px solid var(--green);
+  color: var(--green); border-radius: var(--r);
+  font-size: .85rem; font-weight: 700; cursor: pointer;
+  transition: background .15s;
+}
+.btn-dl:hover { background: rgba(83,252,24,.08); }
+.btn-dl.vis { display: block; }
+
+.btn-share {
+  display: none; width: 100%; padding: 11px;
+  background: var(--surf2); border: 1px solid var(--blue);
+  color: var(--blue); border-radius: var(--r);
+  font-size: .85rem; font-weight: 700; cursor: pointer;
+  transition: background .15s;
+}
+.btn-share:hover { background: rgba(41,182,246,.1); }
+.btn-share.vis { display: block; }
+
+/* ── PANEL PREVIEW ── */
+.panel-prev {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: flex-start;
+  padding: 18px 14px; gap: 10px;
+  background: #060810;
+  overflow-y: auto;
+}
+.prev-label { font-size: .72rem; color: var(--muted); text-align: center; }
+
+/* Marco 9:16 que se adapta a la altura disponible */
+.frame-9x16 {
+  position: relative;
+  /* Calcular width a partir de la altura disponible */
+  /* max-height: calc(100vh - 50px - 60px) */
+  height: min(calc(100vh - 130px), 640px);
+  aspect-ratio: 9 / 16;
+  background: #000;
+  border-radius: 10px;
+  overflow: hidden;
+  border: 2px solid var(--border);
+  box-shadow: 0 6px 28px rgba(0,0,0,.7);
+  cursor: crosshair;
+  flex-shrink: 0;
+}
+#render-canvas {
+  width: 100%; height: 100%;
+  display: block; touch-action: none;
+}
+
+/* Overlay de hint */
+.frame-hint {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+  flex-direction: column; gap: 8px;
+  color: var(--muted); font-size: .8rem;
+  pointer-events: none; text-align: center; padding: 20px;
+}
+.frame-hint .h-icon { font-size: 2rem; }
+.frame-hint.hidden { display: none; }
+
+/* Cursor hint */
+.drag-hint {
+  position: absolute; bottom: 8px; left: 50%; transform: translateX(-50%);
+  background: rgba(0,0,0,.65); color: rgba(255,255,255,.7);
+  font-size: .62rem; padding: 3px 9px; border-radius: 20px;
+  pointer-events: none; white-space: nowrap;
+}
+
+/* ════════════════════════════════════════════════════
+   RESPONSIVE
+════════════════════════════════════════════════════ */
+@media (max-width: 860px) {
+  .studio { grid-template-columns: 1fr; }
+  .panel-ctrl { border-right: none; border-bottom: 1px solid var(--border); }
+  .panel-prev { min-height: 420px; }
+  .frame-9x16 { height: min(calc(100vw * 16/9 * 0.65), 520px); }
+}
+@media (max-width: 480px) {
+  .panel-ctrl { padding: 11px; }
+  .frame-9x16 { height: min(70vw * 16/9, 440px); }
+}
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-brand">📹 RENDER STUDIO</div>
+  <a class="btn-sm" href="index.html">← Dashboard</a>
+</div>
+
+<!-- Video fuente oculto -->
+<video id="src-video" style="display:none" muted playsinline preload="auto"></video>
+
+<div class="studio">
+
+  <!-- ═══════ PANEL CONTROLES ═══════ -->
+  <div class="panel-ctrl">
+
+    <!-- 1. CARGAR VIDEO -->
+    <label class="dz" id="dropzone">
+      <span class="dz-icon">📁</span>
+      <div class="dz-text">
+        <strong>Cargar clip MP4/MOV</strong><br>
+        Arrastra aquí o toca para seleccionar
+      </div>
+      <input type="file" id="file-input" accept="video/*">
+    </label>
+
+    <!-- 2. AJUSTES DEL CLIP -->
+    <div class="sec">
+      <div class="sec-title">🛠 Ajustes del clip</div>
+
+      <div class="field">
+        <label>Nombre del streamer</label>
+        <input type="text" id="txt-streamer" value="daarick" placeholder="ej: daarick">
+      </div>
+
+      <div class="field">
+        <label>Título del clip</label>
+        <input type="text" id="txt-title" value="MOMENTO VIRAL DEL STREAM">
+      </div>
+
+      <div class="field">
+        <label>Formato de render</label>
+        <select id="sel-layout">
+          <option value="blur">Full Frame Blur (fondo desenfocado)</option>
+          <option value="fill">Vertical Relleno (ocupa todo el frame)</option>
+        </select>
+      </div>
+
+      <label class="chk">
+        <input type="checkbox" id="chk-banner" checked>
+        Mostrar KICK + nombre del streamer
+      </label>
+
+      <label class="chk">
+        <input type="checkbox" id="chk-title" checked>
+        Mostrar título del clip
+      </label>
+
+      <label class="chk">
+        <input type="checkbox" id="chk-logo" checked>
+        Marca de agua StreamRadar
+      </label>
+    </div>
+
+    <!-- 3. REENCUADRE / ZOOM (visible siempre) -->
+    <div class="sec" id="reframe-sec">
+      <div class="sec-title">🎯 Reencuadre y zoom</div>
+      <div class="sl-row">
+        <label>Zoom</label>
+        <input type="range" id="sl-zoom" min="10" max="80" value="10" step="1">
+        <span class="sv" id="sv-zoom">1.0×</span>
+      </div>
+      <div class="sl-row">
+        <label>Pos. X</label>
+        <input type="range" id="sl-x" min="0" max="100" value="50">
+        <span class="sv" id="sv-x">50%</span>
+      </div>
+      <div class="sl-row">
+        <label>Pos. Y</label>
+        <input type="range" id="sl-y" min="0" max="100" value="50">
+        <span class="sv" id="sv-y">50%</span>
+      </div>
+      <div class="sl-hint">💡 También arrastra el preview o usa la rueda del mouse / pinch</div>
+    </div>
+
+    <!-- 4. EXPORTAR -->
+    <div class="sec">
+      <div class="sec-title">📤 Exportar</div>
+
+      <button class="btn-export" id="btn-export" disabled>
+        ▶ Exportar clip vertical
+      </button>
+
+      <!-- Barra de progreso -->
+      <div class="prog-wrap" id="prog-wrap">
+        <div class="prog-bar-track">
+          <div class="prog-bar-fill" id="prog-fill"></div>
+        </div>
+        <div class="prog-label">
+          <span id="prog-pct">0%</span>
+          <span id="prog-time">0s / 0s</span>
+        </div>
+      </div>
+
+      <!-- Status / error -->
+      <div class="status-box" id="status-box"></div>
+
+      <!-- Botón descarga manual -->
+      <button class="btn-dl" id="btn-dl">⬇ Descargar clip</button>
+
+      <!-- Botón compartir móvil -->
+      <button class="btn-share" id="btn-share">📲 Compartir (iOS/Android)</button>
+    </div>
+
+  </div>
+
+  <!-- ═══════ PANEL PREVIEW ═══════ -->
+  <div class="panel-prev">
+    <div class="prev-label">Preview 9:16 · Arrastra para reencuadrar · Rueda = zoom</div>
+    <div class="frame-9x16" id="frame-wrap">
+      <canvas id="render-canvas" width="1080" height="1920"></canvas>
+      <div class="frame-hint" id="frame-hint">
+        <span class="h-icon">📽</span>
+        <span>Carga un video para ver el preview</span>
+      </div>
+      <div class="drag-hint">🖱 arrastrar · 🔍 rueda/pinch</div>
+    </div>
+  </div>
+
+</div><!-- /studio -->
+
+<script>
+/* ═══════════════════════════════════════════════════════
+   CONSTANTES DE COMPOSICIÓN (en píxeles de canvas 1080×1920)
+   
+   Layout BLUR  (fondo desenfocado estilo TikTok):
+   ┌──────────────────┐ Y:0
+   │  FONDO BLUR      │  cubre todo 1080×1920
+   ├──────────────────┤
+   │  VIDEO CENTRADO  │  zona Y:0  → Y:1580  (fit-contain)
+   ├──────────────────┤ Y:1580
+   │▓▓ BARRA NEGRA ▓▓│  h:50  →  fondo del título
+   │   TÍTULO         │  Y:1580–1650
+   ├──────────────────┤ Y:1650
+   │  BADGE KICK/NAME │  h:70  Y:1650–1720
+   ├──────────────────┤ Y:1720
+   │  BANNER STREAMER │  h:200 Y:1720–1920
+   └──────────────────┘ Y:1920
+
+   Layout FILL (relleno total — como la imagen de referencia):
+   ┌──────────────────┐ Y:0
+   │                  │
+   │   VIDEO COVER    │  escala para cubrir 1080×1920
+   │   (con zoom+drag)│  → puede recortar bordes
+   │                  │
+   ├──────────────────┤ Y:1560
+   │▓▓ BARRA NEGRA ▓▓│  semitransparente, h:60
+   │   TÍTULO         │  centrado en Y:1560–1620
+   ├──────────────────┤ Y:1630
+   │  BADGE KICK/NAME │  h:60  Y:1630–1690
+   ├──────────────────┤ Y:1700
+   │  BANNER STREAMER │  h:220 Y:1700–1920
+   └──────────────────┘ Y:1920
+═══════════════════════════════════════════════════════ */
+
+const LAYOUT = {
+  blur: {
+    videoZoneY: 0,   videoZoneH: 1580,
+    titleBarY:  1580, titleBarH: 70,
+    badgeY:     1665,
+    bannerY:    1720, bannerH: 200,
+  },
+  fill: {
+    videoZoneY: 0,   videoZoneH: 1920, // todo el canvas
+    titleBarY:  1555, titleBarH: 70,
+    badgeY:     1640,
+    bannerY:    1700, bannerH: 220,
+  }
+};
+
+/* ═══════════════════════════════════════════════════════
+   FUENTE + IMÁGENES
+═══════════════════════════════════════════════════════ */
+const customFont = new FontFace('Anton', 'url(assets/fonts/Anton-Regular.ttf)');
+customFont.load()
+  .then(f => { document.fonts.add(f); requestRedraw(); })
+  .catch(() => {});
+
+const FONT = `'Anton', Impact, Arial Black, sans-serif`;
+
+const logoImg   = new Image();
+logoImg.src     = 'assets/logos/streamradar_logo.png';
+logoImg.onload  = requestRedraw;
+
+const bannerImg = new Image();
+bannerImg.onerror = () => { bannerImg._failed = true; requestRedraw(); };
+bannerImg.onload  = requestRedraw;
+
+/* ═══════════════════════════════════════════════════════
+   REFS DOM
+═══════════════════════════════════════════════════════ */
+const video       = document.getElementById('src-video');
+const canvas      = document.getElementById('render-canvas');
+const ctx         = canvas.getContext('2d');
+const fileInput   = document.getElementById('file-input');
+const dropzone    = document.getElementById('dropzone');
+const txtStreamer = document.getElementById('txt-streamer');
+const txtTitle    = document.getElementById('txt-title');
+const selLayout   = document.getElementById('sel-layout');
+const chkBanner   = document.getElementById('chk-banner');
+const chkTitle    = document.getElementById('chk-title');
+const chkLogo     = document.getElementById('chk-logo');
+const slZoom      = document.getElementById('sl-zoom');
+const slX         = document.getElementById('sl-x');
+const slY         = document.getElementById('sl-y');
+const btnExport   = document.getElementById('btn-export');
+const btnDl       = document.getElementById('btn-dl');
+const btnShare    = document.getElementById('btn-share');
+const progWrap    = document.getElementById('prog-wrap');
+const progFill    = document.getElementById('prog-fill');
+const progPct     = document.getElementById('prog-pct');
+const progTime    = document.getElementById('prog-time');
+const statusBox   = document.getElementById('status-box');
+const frameHint   = document.getElementById('frame-hint');
+
+/* ═══════════════════════════════════════════════════════
+   ESTADO
+═══════════════════════════════════════════════════════ */
+let animId         = null;   // rAF del preview
+let exportedBlob   = null;
+let recorder       = null;
+let chunks         = [];
+let isDragging     = false;
+let dragX          = 0, dragY = 0;
+let lastPinchDist  = null;
+let redrawPending  = false;
+
+/* ═══════════════════════════════════════════════════════
+   SLIDERS — display + redraw
+═══════════════════════════════════════════════════════ */
+function updateSliders() {
+  const z = (parseFloat(slZoom.value) / 10).toFixed(1);
+  document.getElementById('sv-zoom').textContent = z + '×';
+  document.getElementById('sv-x').textContent    = slX.value + '%';
+  document.getElementById('sv-y').textContent    = slY.value + '%';
+  requestRedraw();
+}
+[slZoom, slX, slY].forEach(s => s.addEventListener('input', updateSliders));
+
+/* Opciones del clip */
+[txtStreamer, txtTitle, chkBanner, chkTitle, chkLogo, selLayout].forEach(el => {
+  el.addEventListener('input', () => {
+    loadBannerForStreamer();
+    requestRedraw();
+  });
+});
+
+/* ═══════════════════════════════════════════════════════
+   BANNER DEL STREAMER
+═══════════════════════════════════════════════════════ */
+function loadBannerForStreamer() {
+  const name = txtStreamer.value.trim().toLowerCase();
+  if (!name) return;
+  bannerImg._failed = false;
+  bannerImg.src = `assets/banners/${name}.jpg`;
+}
+
+/* ═══════════════════════════════════════════════════════
+   DRAG & DROP — ARCHIVO
+═══════════════════════════════════════════════════════ */
+dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('over'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('over'));
+dropzone.addEventListener('drop', e => {
+  e.preventDefault(); dropzone.classList.remove('over');
+  const f = e.dataTransfer?.files[0];
+  if (f && f.type.startsWith('video/')) loadFile(f);
+});
+fileInput.addEventListener('change', e => {
+  if (e.target.files[0]) loadFile(e.target.files[0]);
+});
+
+function loadFile(file) {
+  // Revocar URL anterior si existe
+  if (video._blobUrl) URL.revokeObjectURL(video._blobUrl);
+  const url  = URL.createObjectURL(file);
+  video._blobUrl = url;
+  video.src  = url;
+  video.load();
+
+  setStatus('info', '⏳ Cargando video…');
+
+  video.onloadedmetadata = () => {
+    btnExport.disabled = false;
+    frameHint.classList.add('hidden');
+    loadBannerForStreamer();
+    video.currentTime = 0;
+
+    setStatus('ok', `✅ Video listo · ${video.videoWidth}×${video.videoHeight} · ${fmtDur(video.duration)}`);
+
+    // Dibujar primer frame
+    video.onseeked = () => {
+      requestRedraw();
+      video.onseeked = null;
+    };
+    // Preview loop
+    startPreviewLoop();
+  };
+
+  video.onerror = () => {
+    setStatus('err', `❌ No se pudo cargar el video. Asegúrate de que sea MP4/MOV/WebM.`);
+  };
+}
+
+/* ═══════════════════════════════════════════════════════
+   CANVAS DRAG + ZOOM — desktop & mobile
+═══════════════════════════════════════════════════════ */
+canvas.addEventListener('mousedown', e => {
+  isDragging = true; dragX = e.clientX; dragY = e.clientY;
+  canvas.style.cursor = 'grabbing';
+});
+window.addEventListener('mousemove', e => {
+  if (!isDragging) return;
+  applyDrag(e.clientX - dragX, e.clientY - dragY);
+  dragX = e.clientX; dragY = e.clientY;
+});
+window.addEventListener('mouseup', () => { isDragging = false; canvas.style.cursor = 'crosshair'; });
+
+canvas.addEventListener('wheel', e => {
+  e.preventDefault();
+  let z = parseFloat(slZoom.value) + (e.deltaY < 0 ? 1 : -1);
+  slZoom.value = Math.max(10, Math.min(80, z));
+  updateSliders();
+}, { passive: false });
+
+canvas.addEventListener('touchstart', e => {
+  if (e.touches.length === 1) {
+    isDragging = true; lastPinchDist = null;
+    dragX = e.touches[0].clientX;
+    dragY = e.touches[0].clientY;
+  }
+  if (e.touches.length === 2) {
+    isDragging = false;
+    lastPinchDist = pinchDist(e.touches);
+  }
+}, { passive: true });
+
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  if (e.touches.length === 1 && isDragging) {
+    applyDrag(e.touches[0].clientX - dragX, e.touches[0].clientY - dragY);
+    dragX = e.touches[0].clientX;
+    dragY = e.touches[0].clientY;
+  }
+  if (e.touches.length === 2 && lastPinchDist !== null) {
+    const d = pinchDist(e.touches);
+    let z = parseFloat(slZoom.value) + (d - lastPinchDist) * 0.12;
+    slZoom.value = Math.max(10, Math.min(80, z));
+    lastPinchDist = d;
+    updateSliders();
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchend', () => { isDragging = false; lastPinchDist = null; });
+
+function applyDrag(dx, dy) {
+  if (!video.videoWidth) return;
+  // Sensibilidad proporcional al zoom
+  const sens = 0.25 * (parseFloat(slZoom.value) / 10);
+  let nx = parseFloat(slX.value) - dx * sens;
+  let ny = parseFloat(slY.value) - dy * sens;
+  slX.value = clamp(nx, 0, 100);
+  slY.value = clamp(ny, 0, 100);
+  updateSliders();
+}
+function pinchDist(t) { return Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY); }
+function clamp(v, mn, mx) { return Math.max(mn, Math.min(mx, v)); }
+
+/* ═══════════════════════════════════════════════════════
+   DRAW FRAME — corazón del render
+═══════════════════════════════════════════════════════ */
+function requestRedraw() {
+  if (redrawPending) return;
+  redrawPending = true;
+  requestAnimationFrame(() => { redrawPending = false; drawFrame(); });
+}
+
+function drawFrame() {
+  const W = 1080, H = 1920;
+  const layout = selLayout.value;                    // 'blur' | 'fill'
+  const L      = LAYOUT[layout];
+  const name   = txtStreamer.value.trim().toUpperCase();
+  const title  = txtTitle.value.trim().toUpperCase();
+  const zoom   = parseFloat(slZoom.value) / 10;      // 1.0–8.0
+  const pX     = parseFloat(slX.value) / 100;        // 0–1
+  const pY     = parseFloat(slY.value) / 100;        // 0–1
+  const vW     = video.videoWidth  || 0;
+  const vH     = video.videoHeight || 0;
+  const hasVid = vW > 0 && vH > 0;
+
+  /* — Fondo base negro — */
+  ctx.fillStyle = '#000';
+  ctx.fillRect(0, 0, W, H);
+
+  if (!hasVid) {
+    /* Placeholder vacío */
+    ctx.fillStyle = '#0a0f15';
+    ctx.fillRect(0, 0, W, H);
+    drawPlaceholderText(W, H);
+    return;
+  }
+
+  /* ─────────────────────────────────────────
+     VIDEO según layout
+  ───────────────────────────────────────── */
+  if (layout === 'blur') {
+    drawBlur(W, H, L, vW, vH, zoom, pX, pY);
+  } else {
+    drawFill(W, H, L, vW, vH, zoom, pX, pY);
+  }
+
+  /* ─────────────────────────────────────────
+     OVERLAY INFERIOR (título + badge + banner)
+     Se dibuja ENCIMA del video en ambos modos
+  ───────────────────────────────────────── */
+
+  /* 1. Gradiente negro que desvanece el video hacia abajo
+        (para que el texto sea siempre legible sobre cualquier video) */
+  const gradY = L.titleBarY - 120;
+  const grad  = ctx.createLinearGradient(0, gradY, 0, L.titleBarY + L.titleBarH);
+  grad.addColorStop(0,   'rgba(0,0,0,0)');
+  grad.addColorStop(0.4, 'rgba(0,0,0,0.7)');
+  grad.addColorStop(1,   'rgba(0,0,0,0.95)');
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, gradY, W, H - gradY);
+
+  /* 2. Barra sólida bajo el título */
+  ctx.fillStyle = 'rgba(0,0,0,0.9)';
+  ctx.fillRect(0, L.titleBarY, W, L.titleBarH);
+
+  /* 3. Título */
+  if (chkTitle.checked && title) {
+    ctx.save();
+    let fs = 62;
+    ctx.font = `${fs}px ${FONT}`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    while (ctx.measureText(title).width > W - 60 && fs > 30) {
+      fs -= 2;
+      ctx.font = `${fs}px ${FONT}`;
+    }
+    /* Sombra */
+    ctx.shadowColor = 'rgba(0,0,0,0.9)';
+    ctx.shadowBlur  = 8;
+    ctx.fillStyle   = '#ffffff';
+    ctx.fillText(title, W / 2, L.titleBarY + L.titleBarH / 2);
+    ctx.restore();
+  }
+
+  /* 4. Badge KICK / nombre */
+  if (chkBanner.checked) {
+    drawKickBadge(W, L.badgeY, name);
+  }
+
+  /* 5. Banner del streamer */
+  if (!bannerImg._failed && bannerImg.complete && bannerImg.naturalWidth > 0) {
+    drawBannerStrip(W, L.bannerY, L.bannerH);
+  } else if (chkBanner.checked) {
+    /* Fallback: solo fondo oscuro con nombre grande */
+    ctx.fillStyle = '#0b1420';
+    ctx.fillRect(0, L.bannerY, W, L.bannerH);
+    ctx.save();
+    ctx.font = `bold 48px ${FONT}`;
+    ctx.fillStyle = '#53fc18';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(name, W / 2, L.bannerY + L.bannerH / 2);
+    ctx.restore();
+  }
+
+  /* 6. Logo StreamRadar */
+  if (chkLogo.checked && logoImg.complete && logoImg.naturalWidth > 0) {
+    ctx.drawImage(logoImg, W - 110, 20, 90, 90);
+  }
+}
+
+/* ─────────────────────────────────────────────
+   BLUR LAYOUT
+   Zona de video: 1080×1580 (Y 0..1580)
+   Capa 1: fondo blur que cubre todo
+   Capa 2: video fit-contain centrado en zona
+────────────────────────────────────────────── */
+function drawBlur(W, H, L, vW, vH, zoom, pX, pY) {
+  /* Capa 1 — fondo blur (cover 1080×1920) */
+  ctx.save();
+  ctx.filter = 'blur(28px) brightness(0.3) saturate(1.5)';
+  const sc = Math.max(W / vW, H / vH);
+  ctx.drawImage(video,
+    (W - vW * sc) / 2, (H - vH * sc) / 2,
+    vW * sc, vH * sc
+  );
+  ctx.restore();
+
+  /* Capa 2 — video principal fit-contain */
+  const zoneW = W, zoneH = L.videoZoneH;
+  const sf    = Math.min(zoneW / vW, zoneH / vH);
+  const dW    = vW * sf, dH = vH * sf;
+  const dX    = (W - dW) / 2;
+  const dY    = (zoneH - dH) / 2;
+
+  /* Recorte fuente con zoom/pan */
+  const srcW = vW / zoom,  srcH = vH / zoom;
+  const srcX = (vW - srcW) * pX;
+  const srcY = (vH - srcH) * pY;
+
+  ctx.drawImage(video, srcX, srcY, srcW, srcH, dX, dY, dW, dH);
+}
+
+/* ─────────────────────────────────────────────
+   FILL LAYOUT  (como la imagen de referencia)
+   El video cubre TODO el canvas 1080×1920.
+   Zoom + pan permiten elegir qué parte ver.
+   Los overlays se pintan ENCIMA del video.
+────────────────────────────────────────────── */
+function drawFill(W, H, L, vW, vH, zoom, pX, pY) {
+  /* Escala base: cover (el video llena todo sin dejar bordes negros) */
+  const sc   = Math.max(W / vW, H / vH) * zoom;
+  const dW   = vW * sc,  dH = vH * sc;
+  /* Pan: desplazamiento dentro del área de overflow */
+  const dX   = (W - dW) * pX;
+  const dY   = (H - dH) * pY;
+
+  ctx.drawImage(video, dX, dY, dW, dH);
+}
+
+/* ─────────────────────────────────────────────
+   BADGE  KICK / NOMBRE
+────────────────────────────────────────────── */
+function drawKickBadge(W, midY, name) {
+  ctx.save();
+  ctx.textBaseline = 'middle';
+  ctx.textAlign    = 'left';
+  const fs  = 38;
+  ctx.font  = `${fs}px ${FONT}`;
+
+  /* Medir */
+  const kickTxt = 'KICK';
+  const sepTxt  = ` / ${name}`;
+  const kickW   = ctx.measureText(kickTxt).width;
+  const sepW    = ctx.measureText(sepTxt).width;
+  const totalW  = kickW + sepW + 4;
+  const startX  = (W - totalW) / 2;
+
+  /* Sombra ligera */
+  ctx.shadowColor = 'rgba(0,0,0,0.8)';
+  ctx.shadowBlur  = 6;
+
+  /* KICK en verde */
+  ctx.fillStyle = '#53fc18';
+  ctx.fillText(kickTxt, startX, midY);
+
+  /* / NOMBRE en blanco */
+  ctx.fillStyle = '#ffffff';
+  ctx.fillText(sepTxt, startX + kickW + 2, midY);
+
+  ctx.restore();
+}
+
+/* ─────────────────────────────────────────────
+   BANNER STRIP del streamer
+────────────────────────────────────────────── */
+function drawBannerStrip(W, Y, H) {
+  ctx.save();
+  /* Fondo blur del banner (siempre cubre el ancho) */
+  ctx.filter = 'blur(14px) brightness(0.5)';
+  ctx.drawImage(bannerImg, 0, Y, W, H);
+  ctx.filter = 'none';
+  /* Banner por encima centrado, ajustado a la altura */
+  const bAR    = bannerImg.naturalWidth / bannerImg.naturalHeight;
+  const bDestH = H;
+  const bDestW = bAR * bDestH;
+  const bDestX = (W - bDestW) / 2;
+  ctx.drawImage(bannerImg, bDestX, Y, bDestW, bDestH);
+  ctx.restore();
+}
+
+/* ─────────────────────────────────────────────
+   PLACEHOLDER vacío
+────────────────────────────────────────────── */
+function drawPlaceholderText(W, H) {
+  ctx.save();
+  ctx.font = `52px ${FONT}`;
+  ctx.fillStyle = '#1e2d3d';
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText('SIN VIDEO', W / 2, H / 2 - 40);
+  ctx.font = '32px sans-serif';
+  ctx.fillStyle = '#2a3d52';
+  ctx.fillText('Carga un clip para comenzar', W / 2, H / 2 + 20);
+  ctx.restore();
+}
+
+/* ═══════════════════════════════════════════════════════
+   DETECCIÓN DE MÓVIL
+   Usada para ajustar estrategia de exportación
+═══════════════════════════════════════════════════════ */
+const IS_MOBILE = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
+/* ═══════════════════════════════════════════════════════
+   PREVIEW LOOP — solo mientras no se está exportando
+═══════════════════════════════════════════════════════ */
+function startPreviewLoop() {
+  cancelAnimationFrame(animId);
+  video.play().catch(() => {});
+
+  function tick() {
+    drawFrame();
+    animId = requestAnimationFrame(tick);
+  }
+  animId = requestAnimationFrame(tick);
+}
+
+function stopPreviewLoop() {
+  cancelAnimationFrame(animId);
+  animId = null;
+}
+
+video.addEventListener('pause', () => { if (!isExporting()) drawFrame(); });
+video.addEventListener('seeked', () => { if (!isExporting()) drawFrame(); });
+let _exporting = false;
+function isExporting() { return _exporting; }
+
+/* ═══════════════════════════════════════════════════════
+   EXPORTAR — motor frame-accurate para móvil y desktop
+   ──────────────────────────────────────────────────────
+   PROBLEMA EN MÓVIL:
+   canvas.captureStream(30) + rAF no garantiza 30fps reales
+   en dispositivos con CPU limitada. El MediaRecorder graba
+   los frames que llegan aunque sean 15fps, pero los
+   timestampea como tiempo real → video extendido.
+
+   SOLUCIÓN:
+   • Desktop: captureStream normal (CPU suficiente)
+   • Móvil: exportCanvas temporal reducido (540×960) +
+     requestVideoFrameCallback para sincronía exacta.
+     Esto mantiene el timing del video original 1:1.
+═══════════════════════════════════════════════════════ */
+btnExport.addEventListener('click', startExport);
+
+async function startExport() {
+  if (!video.src) { setStatus('err', '❌ No hay video cargado.'); return; }
+
+  /* ── Reset UI ── */
+  _exporting   = true;
+  chunks       = [];
+  exportedBlob = null;
+  btnDl.classList.remove('vis');
+  btnShare.classList.remove('vis');
+  btnExport.disabled = true;
+  progWrap.classList.add('visible');
+  setProgress(0);
+  setStatus('info', '⏳ Preparando exportación…');
+
+  const duration = video.duration;
+
+  /* ── Elegir codec ── */
+  const CODECS = [
+    { mime: 'video/mp4;codecs=avc1.42E01E,mp4a.40.2', ext: 'mp4' },
+    { mime: 'video/mp4;codecs=avc1',                    ext: 'mp4' },
+    { mime: 'video/webm;codecs=vp9,opus',               ext: 'webm' },
+    { mime: 'video/webm;codecs=vp8,opus',               ext: 'webm' },
+    { mime: 'video/webm',                               ext: 'webm' },
+  ];
+  const chosen = CODECS.find(c => MediaRecorder.isTypeSupported(c.mime));
+  if (!chosen) {
+    return exportError('Tu navegador no soporta MediaRecorder. Prueba en Chrome o Edge.');
+  }
+
+  /* ────────────────────────────────────────────────────
+     ESTRATEGIA SEGÚN DISPOSITIVO
+     ────────────────────────────────────────────────────
+     Móvil: usamos un canvas EXPORTADOR separado a 540×960
+     (mitad de resolución) para reducir carga de CPU.
+     El canvas de preview (1080×1920) sigue siendo el que
+     el usuario ve, pero NO es el que grabamos.
+     
+     El canvas exportador se actualiza sólo cuando el video
+     avanza un frame (via requestVideoFrameCallback o timeupdate),
+     garantizando sincronía 1:1 con la duración real del video.
+  ──────────────────────────────────────────────────── */
+
+  let exportCanvas, exportCtx;
+  const USE_OFFSCREEN = IS_MOBILE;
+
+  if (USE_OFFSCREEN) {
+    /* Canvas de exportación a media resolución en móvil */
+    exportCanvas = document.createElement('canvas');
+    exportCanvas.width  = 540;
+    exportCanvas.height = 960;
+    exportCtx = exportCanvas.getContext('2d');
+    setStatus('info', `📱 Móvil detectado — exportando a 540×960 para velocidad correcta…`);
+  } else {
+    /* Desktop: usamos el canvas principal 1080×1920 */
+    exportCanvas = canvas;
+    exportCtx    = ctx;
+    setStatus('info', `🖥 Desktop — exportando a 1080×1920…`);
+  }
+
+  /* ── Canvas stream ── */
+  let canvasStream;
+  try {
+    /* En móvil pedimos exactamente 30fps al stream del canvas exportador */
+    canvasStream = exportCanvas.captureStream(30);
+  } catch (e) {
+    return exportError('captureStream no soportado: ' + e.message);
+  }
+
+  /* ── Audio del video original ── */
+  let combined = canvasStream;
+  try {
+    const vs = video.captureStream?.() || video.mozCaptureStream?.();
+    const at = vs?.getAudioTracks() ?? [];
+    if (at.length > 0) {
+      combined = new MediaStream([
+        canvasStream.getVideoTracks()[0],
+        at[0]
+      ]);
+    }
+  } catch { /* sin audio, continuar */ }
+
+  /* ── MediaRecorder ── */
+  let rec;
+  try {
+    rec = new MediaRecorder(combined, {
+      mimeType: chosen.mime,
+      videoBitsPerSecond: USE_OFFSCREEN ? 5_000_000 : 9_000_000
+    });
+  } catch (e) {
+    return exportError('Error al crear MediaRecorder: ' + e.message);
+  }
+
+  recorder = rec;
+  rec.ondataavailable = e => { if (e.data?.size > 0) chunks.push(e.data); };
+  rec.onerror = e => exportError('MediaRecorder error: ' + (e.error?.message || 'desconocido'));
+  rec.onstop  = () => {
+    if (chunks.length === 0) {
+      return exportError('No se capturaron datos. El clip puede ser muy corto o el codec falló.');
+    }
+    finishExport(chosen.ext);
+  };
+
+  /* ── Seek al inicio y esperar ── */
+  stopPreviewLoop();
+  video.currentTime = 0;
+  await seekVideo(video, 0);
+  video.muted = false;
+
+  /* ── Iniciar grabación ANTES de play para no perder frames ── */
+  rec.start(100);
+
+  /* ────────────────────────────────────────────────────
+     LOOP DE FRAMES PARA EL CANVAS EXPORTADOR
+     
+     requestVideoFrameCallback (rvfc) es el método correcto:
+     se llama exactamente cuando el video decodifica un nuevo
+     frame, con el timestamp real del frame.
+     
+     Fallback: timeupdate (menos preciso, cada ~250ms) para
+     navegadores sin rvfc (Firefox < 116, Safari < 15.4).
+  ──────────────────────────────────────────────────── */
+
+  const HAS_RVFC = typeof video.requestVideoFrameCallback === 'function';
+
+  if (USE_OFFSCREEN) {
+    /* Dibujar en el canvas exportador (540×960) con la misma lógica de drawFrame
+       pero escalado a la resolución reducida */
+    function drawToExportCanvas() {
+      drawFrameToCtx(exportCtx, exportCanvas.width, exportCanvas.height);
+    }
+
+    if (HAS_RVFC) {
+      /* Método preciso: dibuja exactamente cuando hay un nuevo frame */
+      function onVideoFrame(now, meta) {
+        if (!_exporting) return;
+        drawToExportCanvas();
+        video.requestVideoFrameCallback(onVideoFrame);
+        updateExportProgress(meta.mediaTime, duration);
+      }
+      video.requestVideoFrameCallback(onVideoFrame);
+    } else {
+      /* Fallback: timeupdate + rAF para suavizar */
+      video.addEventListener('timeupdate', function onTU() {
+        if (!_exporting) { video.removeEventListener('timeupdate', onTU); return; }
+        drawToExportCanvas();
+        updateExportProgress(video.currentTime, duration);
+      });
+    }
+  } else {
+    /* Desktop: el loop rAF normal ya mantiene el canvas actualizado */
+    if (HAS_RVFC) {
+      function onVideoFrameDesktop(now, meta) {
+        if (!_exporting) return;
+        drawFrame(); // dibuja en canvas principal 1080×1920
+        video.requestVideoFrameCallback(onVideoFrameDesktop);
+        updateExportProgress(meta.mediaTime, duration);
+      }
+      video.requestVideoFrameCallback(onVideoFrameDesktop);
+    } else {
+      startPreviewLoop(); // fallback: rAF normal
+      const progInt = setInterval(() => {
+        updateExportProgress(video.currentTime, duration);
+        if (!_exporting) clearInterval(progInt);
+      }, 200);
+    }
+  }
+
+  /* ── Play ── */
+  await video.play().catch(e => exportError('No se pudo reproducir el video: ' + e.message));
+
+  /* ── Detener cuando termina ── */
+  video.onended = () => {
+    if (!_exporting) return;
+
+    /* Dar 150ms para que el MediaRecorder reciba el último chunk */
+    setTimeout(() => {
+      if (rec.state === 'recording') rec.stop();
+      _exporting = false;
+      btnExport.disabled = false;
+      stopPreviewLoop();
+      setProgress(100);
+      progTime.textContent = `${fmtDur(duration)} / ${fmtDur(duration)}`;
+      /* Restaurar preview normal */
+      drawFrame();
+    }, 150);
+  };
+}
+
+/* ────────────────────────────────────────────────────
+   drawFrameToCtx — misma lógica que drawFrame pero
+   puede renderizar a cualquier ctx + dimensiones
+   (usado por el canvas exportador en móvil)
+──────────────────────────────────────────────────── */
+function drawFrameToCtx(targetCtx, W, H) {
+  const layout = selLayout.value;
+  const L      = scaleLayout(LAYOUT[layout], W, H);
+  const name   = txtStreamer.value.trim().toUpperCase();
+  const title  = txtTitle.value.trim().toUpperCase();
+  const zoom   = parseFloat(slZoom.value) / 10;
+  const pX     = parseFloat(slX.value) / 100;
+  const pY     = parseFloat(slY.value) / 100;
+  const vW     = video.videoWidth  || 0;
+  const vH     = video.videoHeight || 0;
+  if (!vW || !vH) return;
+
+  targetCtx.fillStyle = '#000';
+  targetCtx.fillRect(0, 0, W, H);
+
+  if (layout === 'blur') {
+    drawBlurToCtx(targetCtx, W, H, L, vW, vH, zoom, pX, pY);
+  } else {
+    drawFillToCtx(targetCtx, W, H, L, vW, vH, zoom, pX, pY);
+  }
+
+  /* Gradiente y overlays */
+  const gradY = L.titleBarY - H * 0.07;
+  const grad  = targetCtx.createLinearGradient(0, gradY, 0, L.titleBarY + L.titleBarH);
+  grad.addColorStop(0,   'rgba(0,0,0,0)');
+  grad.addColorStop(0.4, 'rgba(0,0,0,0.7)');
+  grad.addColorStop(1,   'rgba(0,0,0,0.95)');
+  targetCtx.fillStyle = grad;
+  targetCtx.fillRect(0, gradY, W, H - gradY);
+
+  targetCtx.fillStyle = 'rgba(0,0,0,0.9)';
+  targetCtx.fillRect(0, L.titleBarY, W, L.titleBarH);
+
+  if (chkTitle.checked && title) {
+    targetCtx.save();
+    let fs = Math.round(62 * (W / 1080));
+    const minFs = Math.round(30 * (W / 1080));
+    targetCtx.font = `${fs}px ${FONT}`;
+    targetCtx.textAlign    = 'center';
+    targetCtx.textBaseline = 'middle';
+    while (targetCtx.measureText(title).width > W - 40 && fs > minFs) {
+      fs -= 2; targetCtx.font = `${fs}px ${FONT}`;
+    }
+    targetCtx.shadowColor = 'rgba(0,0,0,0.9)';
+    targetCtx.shadowBlur  = 6;
+    targetCtx.fillStyle   = '#ffffff';
+    targetCtx.fillText(title, W / 2, L.titleBarY + L.titleBarH / 2);
+    targetCtx.restore();
+  }
+
+  if (chkBanner.checked) drawKickBadgeToCtx(targetCtx, W, L.badgeY, name);
+
+  if (!bannerImg._failed && bannerImg.complete && bannerImg.naturalWidth > 0) {
+    drawBannerStripToCtx(targetCtx, W, L.bannerY, L.bannerH);
+  } else if (chkBanner.checked) {
+    targetCtx.fillStyle = '#0b1420';
+    targetCtx.fillRect(0, L.bannerY, W, L.bannerH);
+    targetCtx.save();
+    const bfs = Math.round(48 * (W / 1080));
+    targetCtx.font = `bold ${bfs}px ${FONT}`;
+    targetCtx.fillStyle    = '#53fc18';
+    targetCtx.textAlign    = 'center';
+    targetCtx.textBaseline = 'middle';
+    targetCtx.fillText(name, W / 2, L.bannerY + L.bannerH / 2);
+    targetCtx.restore();
+  }
+
+  if (chkLogo.checked && logoImg.complete && logoImg.naturalWidth > 0) {
+    const ls = Math.round(90 * (W / 1080));
+    targetCtx.drawImage(logoImg, W - ls - Math.round(20*(W/1080)), Math.round(20*(W/1080)), ls, ls);
+  }
+}
+
+/* Escala las coordenadas del LAYOUT de 1080×1920 a cualquier W×H */
+function scaleLayout(L, W, H) {
+  const sx = W / 1080, sy = H / 1920;
+  return {
+    videoZoneY: Math.round(L.videoZoneY  * sy),
+    videoZoneH: Math.round(L.videoZoneH  * sy),
+    titleBarY:  Math.round(L.titleBarY   * sy),
+    titleBarH:  Math.round(L.titleBarH   * sy),
+    badgeY:     Math.round(L.badgeY      * sy),
+    bannerY:    Math.round(L.bannerY     * sy),
+    bannerH:    Math.round(L.bannerH     * sy),
+  };
+}
+
+function drawBlurToCtx(tCtx, W, H, L, vW, vH, zoom, pX, pY) {
+  tCtx.save();
+  tCtx.filter = 'blur(14px) brightness(0.3) saturate(1.5)';
+  const sc = Math.max(W / vW, H / vH);
+  tCtx.drawImage(video, (W - vW*sc)/2, (H - vH*sc)/2, vW*sc, vH*sc);
+  tCtx.restore();
+
+  const sf = Math.min(W / vW, L.videoZoneH / vH);
+  const dW = vW * sf, dH = vH * sf;
+  const dX = (W - dW) / 2, dY = (L.videoZoneH - dH) / 2;
+  const srcW = vW / zoom, srcH = vH / zoom;
+  const srcX = (vW - srcW) * pX, srcY = (vH - srcH) * pY;
+  tCtx.drawImage(video, srcX, srcY, srcW, srcH, dX, dY, dW, dH);
+}
+
+function drawFillToCtx(tCtx, W, H, L, vW, vH, zoom, pX, pY) {
+  const sc = Math.max(W / vW, H / vH) * zoom;
+  const dW = vW * sc, dH = vH * sc;
+  tCtx.drawImage(video, (W - dW) * pX, (H - dH) * pY, dW, dH);
+}
+
+function drawKickBadgeToCtx(tCtx, W, midY, name) {
+  tCtx.save();
+  const fs = Math.round(38 * (W / 1080));
+  tCtx.font = `${fs}px ${FONT}`;
+  tCtx.textBaseline = 'middle'; tCtx.textAlign = 'left';
+  const kickTxt = 'KICK', sepTxt = ` / ${name}`;
+  const kickW = tCtx.measureText(kickTxt).width;
+  const sepW  = tCtx.measureText(sepTxt).width;
+  const startX = (W - kickW - sepW - 4) / 2;
+  tCtx.shadowColor = 'rgba(0,0,0,0.8)'; tCtx.shadowBlur = 5;
+  tCtx.fillStyle = '#53fc18'; tCtx.fillText(kickTxt, startX, midY);
+  tCtx.fillStyle = '#ffffff'; tCtx.fillText(sepTxt, startX + kickW + 2, midY);
+  tCtx.restore();
+}
+
+function drawBannerStripToCtx(tCtx, W, Y, H) {
+  tCtx.save();
+  tCtx.filter = 'blur(8px) brightness(0.5)';
+  tCtx.drawImage(bannerImg, 0, Y, W, H);
+  tCtx.filter = 'none';
+  const bAR = bannerImg.naturalWidth / bannerImg.naturalHeight;
+  const bW  = bAR * H;
+  tCtx.drawImage(bannerImg, (W - bW) / 2, Y, bW, H);
+  tCtx.restore();
+}
+
+/* ── helpers de progreso y seek ── */
+function updateExportProgress(currentTime, duration) {
+  const pct = Math.min(99, (currentTime / duration) * 100);
+  setProgress(pct);
+  progTime.textContent = `${fmtDur(currentTime)} / ${fmtDur(duration)}`;
+}
+
+function seekVideo(vid, time) {
+  return new Promise(resolve => {
+    if (Math.abs(vid.currentTime - time) < 0.05) { resolve(); return; }
+    const onSeeked = () => { vid.removeEventListener('seeked', onSeeked); resolve(); };
+    vid.addEventListener('seeked', onSeeked);
+    vid.currentTime = time;
+    /* Timeout de seguridad por si seeked nunca dispara */
+    setTimeout(resolve, 1500);
+  });
+}
+
+function finishExport(ext) {
+  exportedBlob = new Blob(chunks, { type: recorder.mimeType });
+  const mb = (exportedBlob.size / 1e6).toFixed(1);
+  const filename = `clip_${txtStreamer.value.trim().toLowerCase() || 'stream'}.${ext}`;
+
+  setStatus('ok', `✅ Exportación lista · ${mb} MB · formato ${ext.toUpperCase()}`);
+  progWrap.classList.remove('visible');
+
+  /* Botón de descarga directa */
+  btnDl.textContent = `⬇ Descargar ${filename}`;
+  btnDl.classList.add('vis');
+  btnDl._filename = filename;
+
+  /* Botón compartir */
+  btnShare.classList.add('vis');
+
+  /* Intentar descarga automática */
+  tryDownload(exportedBlob, filename);
+}
+
+function exportError(msg) {
+  _exporting = false;
+  recorder   = null;
+  chunks     = [];
+  btnExport.disabled = false;
+  progWrap.classList.remove('visible');
+  setStatus('err', '❌ ' + msg);
+}
+
+/* ═══════════════════════════════════════════════════════
+   DESCARGA
+═══════════════════════════════════════════════════════ */
+btnDl.addEventListener('click', () => {
+  if (!exportedBlob) return;
+  tryDownload(exportedBlob, btnDl._filename || 'clip.webm');
+});
+
+function tryDownload(blob, filename) {
+  try {
+    const url = URL.createObjectURL(blob);
+    const a   = Object.assign(document.createElement('a'), {
+      href: url, download: filename, style: 'display:none'
+    });
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(() => URL.revokeObjectURL(url), 8000);
+  } catch (e) {
+    setStatus('warn', '⚠ Descarga directa falló. Usa el botón "Compartir".');
+  }
+}
+
+/* ─── Share API (iOS Safari / Chrome Android) ─── */
+btnShare.addEventListener('click', async () => {
+  if (!exportedBlob) {
+    setStatus('err', '❌ Exporta el clip primero.'); return;
+  }
+  const ext  = exportedBlob.type.includes('mp4') ? 'mp4' : 'webm';
+  const name = `clip_${txtStreamer.value.trim().toLowerCase() || 'stream'}.${ext}`;
+  const file = new File([exportedBlob], name, { type: exportedBlob.type });
+
+  if (navigator.canShare?.({ files: [file] })) {
+    try {
+      await navigator.share({ files: [file], title: txtTitle.value });
+      setStatus('ok', '✅ Compartido correctamente.');
+    } catch (e) {
+      if (e.name !== 'AbortError') {
+        setStatus('warn', '⚠ Compartir falló. Intenta descargar directamente.');
+      }
+    }
+  } else {
+    /* Fallback: abrir en nueva pestaña (iOS Safari puede guardarlo) */
+    const url = URL.createObjectURL(exportedBlob);
+    const w   = window.open(url, '_blank');
+    if (!w) {
+      setStatus('warn', '⚠ Popup bloqueado. Usa el botón Descargar.');
+    } else {
+      setStatus('info', '📂 Se abrió en una pestaña nueva. Mantén presionado el video → Guardar.');
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 20000);
+  }
+});
+
+/* ═══════════════════════════════════════════════════════
+   UI HELPERS
+═══════════════════════════════════════════════════════ */
+function setStatus(type, msg) {
+  statusBox.className = `status-box ${type}`;
+  statusBox.textContent = msg;
+}
+
+function setProgress(pct) {
+  const p = Math.round(pct);
+  progFill.style.width = p + '%';
+  progPct.textContent  = p + '%';
+}
+
+function fmtDur(sec) {
+  if (!isFinite(sec) || sec < 0) return '0:00';
+  const m = Math.floor(sec / 60);
+  const s = Math.floor(sec % 60).toString().padStart(2, '0');
+  return `${m}:${s}`;
+}
+
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+/* ═══════════════════════════════════════════════════════
+   INIT
+═══════════════════════════════════════════════════════ */
+updateSliders();
+drawFrame();
+</script>
+</body>
+</html>
