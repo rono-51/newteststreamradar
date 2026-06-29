@@ -1,0 +1,17 @@
+{
+  "name": "streamradar-serverless",
+  "version": "2.0.0",
+  "description": "Monitor viral 24/7 para streamers de Kick — Arquitectura Serverless + Telegram WebApp",
+  "private": true,
+  "scripts": {
+    "dev": "netlify dev",
+    "build": "echo 'Build estático — sin paso de compilación requerido.'",
+    "setup-webhook": "node scripts/setup-webhook.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "devDependencies": {
+    "netlify-cli": "^17.0.0"
+  }
+}
