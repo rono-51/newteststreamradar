@@ -1,0 +1,1381 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>StreamRadar — Monitor de Virales</title>
+
+<!-- SDK oficial de Telegram WebApp (OBLIGATORIO para integración nativa) -->
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+<!-- PWA -->
+<link rel="manifest" href="manifest.json">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="StreamRadar">
+<meta name="theme-color" content="#53fc18">
+<link rel="apple-touch-icon" href="assets/logos/streamradar_logo.png">
+
+<style>
+/* ════════════════════════════════════════════
+   TOKENS & ADAPTACIÓN AL TEMA DE TELEGRAM
+   Las variables CSS de Telegram se usan como base cuando el usuario
+   abre la app dentro de Telegram. En navegador externo, caen al
+   esquema oscuro original de StreamRadar.
+════════════════════════════════════════════ */
+:root {
+  /* Paleta original StreamRadar (fallbacks si no está en Telegram) */
+  --bg:        #080b0f;
+  --surface:   #111720;
+  --surface2:  #1a2330;
+  --border:    #1e2d3d;
+  --green:     #53fc18;
+  --green-dim: #1f5c08;
+  --blue:      #29b6f6;
+  --red:       #ef4444;
+  --orange:    #f59e0b;
+  --purple:    #a855f7;
+  --text:      #dde4ee;
+  --muted:     #556070;
+  --mono:      'JetBrains Mono','Fira Code','Courier New',monospace;
+  --radius:    8px;
+  --topbar-h:  50px;
+}
+
+/* Cuando corre DENTRO de Telegram, el SDK inyecta variables CSS nativas.
+   Sobreescribimos solo las de fondo/texto para integración visual. */
+body.tg-mode {
+  --bg:      var(--tg-theme-bg-color, #080b0f);
+  --surface: var(--tg-theme-secondary-bg-color, #111720);
+  --text:    var(--tg-theme-text-color, #dde4ee);
+  --muted:   var(--tg-theme-hint-color, #556070);
+  --border:  var(--tg-theme-hint-color, #1e2d3d);
+  /* El verde de acento y el rojo de alerta se mantienen para consistencia */
+}
+
+*,*::before,*::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 14px;
+  /* Expansión completa en Telegram WebApp */
+  padding: env(safe-area-inset-top) env(safe-area-inset-right)
+           env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+
+/* ── Banner de modo Telegram ── */
+#tg-banner {
+  display: none;
+  background: rgba(41, 182, 246, 0.1);
+  border-bottom: 1px solid var(--blue);
+  padding: 6px 14px;
+  font-size: 0.72rem;
+  color: var(--blue);
+  text-align: center;
+  flex-shrink: 0;
+}
+#tg-banner.visible { display: block; }
+
+/* ════════════════════════════════════════════
+   TOPBAR
+════════════════════════════════════════════ */
+.topbar {
+  height: var(--topbar-h);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 14px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  position: sticky; top: 0; z-index: 200;
+  flex-shrink: 0;
+}
+.brand {
+  display: flex; align-items: center; gap: 8px;
+  font-weight: 800; font-size: 0.95rem;
+  color: var(--green); white-space: nowrap; flex-shrink: 0;
+}
+.live-dot {
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--red); flex-shrink: 0;
+  animation: blink 1.2s ease infinite;
+}
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+.clock {
+  font-family: var(--mono); font-size: 0.78rem;
+  color: var(--muted); white-space: nowrap;
+}
+.topbar-right {
+  display: flex; align-items: center;
+  gap: 6px; margin-left: auto; flex-wrap: wrap;
+}
+.notif-badge {
+  display: flex; align-items: center; gap: 4px;
+  font-size: 0.72rem; color: var(--muted); white-space: nowrap;
+}
+.notif-badge .nd { width: 6px; height: 6px; border-radius: 50%; background: var(--muted); }
+.notif-badge.ok .nd { background: var(--green); }
+.notif-badge.no .nd { background: var(--red); }
+
+/* Botones */
+.btn {
+  display: inline-flex; align-items: center; gap: 4px;
+  background: var(--surface2); border: 1px solid var(--border);
+  color: var(--text); padding: 5px 10px;
+  border-radius: var(--radius); font-size: 0.73rem;
+  cursor: pointer; white-space: nowrap;
+  transition: background .15s, border-color .15s, color .15s;
+  text-decoration: none;
+}
+.btn:hover { background: #1e2e40; border-color: var(--green); }
+.btn.on    { background: var(--green-dim); border-color: var(--green); color: var(--green); }
+.btn.link  { color: var(--green); border-color: var(--green); }
+
+/* ════════════════════════════════════════════
+   CONFIG PANEL
+════════════════════════════════════════════ */
+.config-panel {
+  display: none; flex-direction: column; gap: 10px;
+  padding: 14px; background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  font-size: 0.78rem;
+}
+.config-panel.open { display: flex; }
+.cfg-row {
+  display: flex; align-items: center;
+  justify-content: space-between; gap: 10px;
+}
+.cfg-row label { color: var(--muted); flex: 1; }
+.cfg-row input[type=range] { flex: 1.5; accent-color: var(--green); }
+.cfg-row .cv {
+  font-family: var(--mono); font-size: 0.78rem;
+  color: var(--green); min-width: 42px; text-align: right;
+}
+
+/* ════════════════════════════════════════════
+   LAYOUT (3 columnas → colapsa en móvil)
+════════════════════════════════════════════ */
+.app {
+  display: grid;
+  grid-template-columns: 230px 1fr 290px;
+  height: calc(100vh - var(--topbar-h));
+  overflow: hidden;
+}
+
+/* ── LEFT PANEL ── */
+.panel-l {
+  border-right: 1px solid var(--border);
+  display: flex; flex-direction: column;
+  overflow: hidden;
+}
+.panel-l-head {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  display: flex; align-items: center;
+  justify-content: space-between; gap: 8px; flex-shrink: 0;
+}
+.panel-l-head span {
+  font-size: 0.68rem; text-transform: uppercase;
+  letter-spacing: 1px; color: var(--muted); font-weight: 700;
+}
+.panel-l-head .l-count {
+  font-family: var(--mono); font-size: 0.8rem;
+  color: var(--green); font-weight: 700;
+}
+.panel-l-body {
+  overflow-y: auto; flex: 1;
+  padding: 8px;
+  display: flex; flex-direction: column; gap: 4px;
+}
+.sel-item {
+  display: flex; align-items: center; gap: 8px;
+  padding: 7px 8px; border-radius: 6px;
+  background: var(--surface);
+  border: 1px solid transparent;
+  cursor: pointer; user-select: none;
+  transition: border-color .2s, background .15s;
+  font-size: 0.8rem;
+}
+.sel-item:hover { background: var(--surface2); }
+.sel-item.monitored { border-color: var(--green-dim); }
+.sel-item.spike-flash { animation: sflash .6s ease 3; }
+@keyframes sflash { 0%,100%{border-color:var(--red)} 50%{border-color:transparent} }
+.sel-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sel-rate { font-family: var(--mono); font-size: 0.68rem; color: var(--muted); white-space: nowrap; }
+.sel-rate.hot    { color: var(--orange); font-weight: 700; }
+.sel-rate.viral  { color: var(--red);    font-weight: 700; }
+
+/* Status dot */
+.sdot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; background: var(--muted); }
+.sdot.online   { background: var(--green); }
+.sdot.checking { background: var(--orange); animation: pulse-o 1s infinite alternate; }
+.sdot.offline  { background: var(--muted); }
+.sdot.error    { background: var(--red); }
+@keyframes pulse-o { from{opacity:.3} to{opacity:1} }
+
+/* Toggle switch */
+.toggle-wrap { display: flex; align-items: center; }
+.toggle { position: relative; width: 30px; height: 16px; flex-shrink: 0; }
+.toggle input { opacity: 0; width: 0; height: 0; }
+.toggle-slider {
+  position: absolute; inset: 0;
+  background: #253040; border-radius: 16px;
+  transition: background .2s;
+  cursor: pointer;
+}
+.toggle-slider::after {
+  content: ''; position: absolute;
+  left: 2px; top: 2px;
+  width: 12px; height: 12px;
+  border-radius: 50%; background: var(--muted);
+  transition: transform .2s, background .2s;
+}
+.toggle input:checked + .toggle-slider { background: var(--green-dim); }
+.toggle input:checked + .toggle-slider::after { transform: translateX(14px); background: var(--green); }
+
+/* ── CENTER PANEL ── */
+.panel-c { overflow-y: auto; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.empty-state {
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: center;
+  height: 100%; gap: 12px;
+  color: var(--muted); font-size: 0.85rem; text-align: center;
+}
+.empty-state .big { font-size: 2.5rem; }
+
+/* Monitoring card */
+.mcard {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 13px; display: flex; flex-direction: column; gap: 9px;
+  transition: border-color .3s, box-shadow .3s;
+}
+.mcard.state-hot  { border-color: var(--orange); box-shadow: 0 0 14px rgba(245,158,11,.12); }
+.mcard.state-viral { border-color: var(--red); box-shadow: 0 0 20px rgba(239,68,68,.2); animation: vpulse .7s ease; }
+@keyframes vpulse { 0%{transform:scale(1)} 50%{transform:scale(1.01)} 100%{transform:scale(1)} }
+
+.mcard-header { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.mcard-name { font-weight: 700; font-size: 0.92rem; color: var(--green); text-decoration: none; flex: 1; }
+.mcard-name:hover { text-decoration: underline; }
+.stream-timer {
+  font-family: var(--mono); font-size: 0.78rem;
+  background: rgba(83,252,24,.08);
+  border: 1px solid var(--green-dim);
+  color: var(--green); padding: 2px 8px;
+  border-radius: 20px; white-space: nowrap;
+}
+.vs-badge { font-size: 0.68rem; font-weight: 700; padding: 2px 7px; border-radius: 20px; letter-spacing: .5px; display: none; }
+.mcard.state-hot  .vs-badge.b-hot   { display:inline-block; background:rgba(245,158,11,.12); color:var(--orange); border:1px solid var(--orange); }
+.mcard.state-viral .vs-badge.b-viral { display:inline-block; background:rgba(239,68,68,.12);  color:var(--red);    border:1px solid var(--red); }
+
+/* Metrics grid */
+.mgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(100px,1fr)); gap: 7px; }
+.mbox  { background: var(--bg); border: 1px solid var(--border); border-radius: 7px; padding: 8px; text-align: center; }
+.mbox label { display: block; font-size: 0.6rem; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); margin-bottom: 3px; }
+.mbox .v { font-family: var(--mono); font-size: 1.05rem; font-weight: 700; }
+.v.c-green  { color: var(--green);  }
+.v.c-blue   { color: var(--blue);   }
+.v.c-orange { color: var(--orange); }
+.v.c-red    { color: var(--red);    }
+.v.c-purple { color: var(--purple); }
+.v.c-dim    { color: var(--muted);  }
+
+/* Sparkline */
+.spark { display: flex; align-items: flex-end; gap: 2px; height: 28px; }
+.spark-bar { flex: 1; background: var(--green-dim); border-radius: 2px 2px 0 0; min-height: 2px; transition: height .35s; }
+.spark-bar.pk { background: var(--red); }
+
+/* Emote tags */
+.emote-row { display: flex; flex-wrap: wrap; gap: 4px; min-height: 20px; }
+.etag { background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; padding: 1px 6px; font-size: 0.7rem; color: var(--blue); font-family: var(--mono); }
+.etag .ec { color: var(--muted); margin-left: 3px; }
+.etag.emote-hot { border-color: var(--orange); color: var(--orange); }
+
+/* Unique users bar */
+.users-bar-wrap { display: flex; align-items: center; gap: 8px; font-size: 0.7rem; }
+.users-bar-track { flex: 1; height: 4px; background: var(--border); border-radius: 2px; overflow: hidden; }
+.users-bar-fill  { height: 100%; background: var(--blue); border-radius: 2px; transition: width .4s; }
+
+/* ── Botón de alerta Telegram (exclusivo WebApp) ── */
+.tg-alert-btn {
+  display: block;
+  margin: 0 12px 4px;
+  padding: 10px;
+  background: var(--blue);
+  color: #000; text-align: center;
+  font-weight: 800; font-size: .8rem;
+  border-radius: var(--radius);
+  border: none; cursor: pointer;
+  text-transform: uppercase; letter-spacing: .5px;
+  flex-shrink: 0;
+  transition: opacity .15s;
+}
+.tg-alert-btn:hover { opacity: .88; }
+/* El botón siempre es visible para facilitar pruebas */
+
+/* ── RIGHT PANEL ── */
+.panel-r { border-left: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+.panel-r-section { padding: 10px 12px; border-bottom: 1px solid var(--border); flex-shrink: 0; }
+.panel-r-section h3 { font-size: 0.68rem; text-transform: uppercase; letter-spacing: 1px; color: var(--muted); font-weight: 700; margin-bottom: 8px; }
+.gstats { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+.gs { background: var(--surface2); border: 1px solid var(--border); border-radius: 7px; padding: 7px; text-align: center; }
+.gs label { display:block; font-size:.6rem; text-transform:uppercase; color:var(--muted); margin-bottom:2px; }
+.gs span  { font-family:var(--mono); font-size:.95rem; font-weight:700; }
+
+/* Alert log */
+.alert-scroll { flex: 1; overflow-y: auto; padding: 8px 12px; display: flex; flex-direction: column; gap: 6px; }
+.aitem {
+  background: var(--surface);
+  border-left: 3px solid var(--red);
+  border-radius: 0 6px 6px 0;
+  padding: 8px 9px; font-size: 0.76rem;
+  animation: slideIn .22s ease; flex-shrink: 0;
+}
+.aitem.t-hot   { border-left-color: var(--orange); }
+.aitem.t-viral { border-left-color: var(--red); }
+.aitem.t-info  { border-left-color: var(--blue); }
+@keyframes slideIn { from{opacity:0;transform:translateX(-8px)} to{opacity:1;transform:translateX(0)} }
+.aitem .an  { font-weight:700; color:var(--green); }
+.aitem .am  { color:var(--muted); font-size:.68rem; margin-top:2px; font-family:var(--mono); }
+.aitem .ast { color:var(--blue);  font-size:.68rem; margin-top:1px; font-family:var(--mono); }
+
+/* Render button */
+.render-link {
+  display: block; margin: 8px 12px 12px;
+  padding: 11px; background: var(--green);
+  color: #000; text-align: center; text-decoration: none;
+  font-weight: 800; font-size: .85rem; border-radius: var(--radius);
+  text-transform: uppercase; letter-spacing: .5px; flex-shrink: 0;
+  transition: opacity .15s;
+}
+.render-link:hover { opacity: .88; }
+
+/* ════════════════════════════════════════════
+   SCROLLBARS
+════════════════════════════════════════════ */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+/* ════════════════════════════════════════════
+   RESPONSIVE
+════════════════════════════════════════════ */
+@media (max-width: 1080px) { .app { grid-template-columns: 200px 1fr 260px; } }
+@media (max-width: 860px) {
+  html, body { overflow: auto; }
+  .app { grid-template-columns: 1fr; grid-template-rows: auto 1fr auto; height: auto; overflow: visible; }
+  .panel-l { border-right: none; border-bottom: 1px solid var(--border); max-height: 260px; }
+  .panel-c { height: auto; overflow: visible; }
+  .panel-r { border-left: none; border-top: 1px solid var(--border); max-height: 380px; }
+  .panel-r .alert-scroll { max-height: 220px; }
+}
+@media (max-width: 480px) {
+  .topbar { height: auto; min-height: var(--topbar-h); flex-wrap: wrap; padding: 8px; }
+  .clock  { display: none; }
+  .mgrid  { grid-template-columns: repeat(3, 1fr); }
+  .mbox .v { font-size: .9rem; }
+  .btn { padding: 5px 8px; font-size: .7rem; }
+}
+</style>
+</head>
+<body>
+
+<!-- Banner de integración Telegram (visible solo en modo WebApp) -->
+<div id="tg-banner">📡 StreamRadar corriendo dentro de Telegram · Alertas automáticas activadas</div>
+
+<!-- ═══════════ TOPBAR ═══════════ -->
+<div class="topbar">
+  <div class="brand"><span class="live-dot"></span>STREAMRADAR</div>
+  <div class="clock" id="clock">--:--:-- PET</div>
+  <div class="topbar-right">
+    <div class="notif-badge" id="notif-badge">
+      <span class="nd"></span><span id="notif-label">Notif. OFF</span>
+    </div>
+    <button class="btn" id="btn-notif" onclick="requestNotif()">🔔 Activar</button>
+    <button class="btn" id="btn-wl"    onclick="toggleWakeLock()">🔆 Pantalla</button>
+    <button class="btn" id="btn-cfg"   onclick="toggleCfg()">⚙ Config</button>
+    <a class="btn link" href="render.html">Render ➔</a>
+  </div>
+</div>
+
+<!-- ═══════════ CONFIG PANEL ═══════════ -->
+<div class="config-panel" id="cfg-panel">
+  <div class="cfg-row">
+    <label>Umbral HOT (Viral Score)</label>
+    <input type="range" id="c-hot"   min="20" max="90"  value="40" step="5">
+    <span class="cv" id="cv-hot">40</span>
+  </div>
+  <div class="cfg-row">
+    <label>Umbral VIRAL (Viral Score)</label>
+    <input type="range" id="c-viral" min="40" max="100" value="70" step="5">
+    <span class="cv" id="cv-viral">70</span>
+  </div>
+  <div class="cfg-row">
+    <label>Cooldown entre alertas (s)</label>
+    <input type="range" id="c-cd"    min="10" max="120" value="45" step="5">
+    <span class="cv" id="cv-cd">45s</span>
+  </div>
+  <div class="cfg-row">
+    <label>Ventana emotes (s)</label>
+    <input type="range" id="c-ew"    min="30" max="120" value="60" step="10">
+    <span class="cv" id="cv-ew">60s</span>
+  </div>
+</div>
+
+<!-- ═══════════ APP LAYOUT ═══════════ -->
+<div class="app">
+
+  <!-- LEFT: selector de streamers -->
+  <div class="panel-l">
+    <div class="panel-l-head">
+      <span>Streamers <span id="online-count" class="l-count">0</span> online</span>
+      <button class="btn" style="font-size:.68rem;padding:3px 7px"
+              onclick="toggleAllMonitored()">Todos</button>
+    </div>
+    <div class="panel-l-body" id="sel-list"></div>
+  </div>
+
+  <!-- CENTER: cards de monitoreo activo -->
+  <div class="panel-c" id="monitor-area">
+    <div class="empty-state" id="empty-msg">
+      <div class="big">📡</div>
+      <div>Verificando streams en vivo…</div>
+      <div style="color:var(--muted);font-size:.78rem">Activa el toggle de un streamer online para monitorearlo</div>
+    </div>
+  </div>
+
+  <!-- RIGHT: stats globales + log de alertas -->
+  <div class="panel-r">
+    <div class="panel-r-section">
+      <h3>Stats Globales</h3>
+      <div class="gstats">
+        <div class="gs"><label>Monitoreados</label><span id="g-mon">0</span></div>
+        <div class="gs"><label>Msgs/min total</label><span id="g-mpm">0</span></div>
+        <div class="gs"><label>Spikes sesión</label><span id="g-spk">0</span></div>
+        <div class="gs"><label>Más activo</label><span id="g-top" style="font-size:.72rem">—</span></div>
+      </div>
+    </div>
+
+    <!-- Botón de alertas Telegram (solo en modo WebApp) -->
+    <button class="tg-alert-btn" id="tg-test-btn" onclick="enviarAlertaTestTelegram()">
+      📨 Enviar alerta de prueba a Telegram
+    </button>
+
+    <div class="panel-r-section" style="flex:1;display:flex;flex-direction:column;border-bottom:none;overflow:hidden;padding-bottom:0">
+      <h3>Alertas recientes</h3>
+      <div class="alert-scroll" id="alert-log"></div>
+    </div>
+    <a class="render-link" href="render.html">Render GO ➔</a>
+  </div>
+
+</div>
+
+<script>
+/* ══════════════════════════════════════════════
+   INTEGRACIÓN TELEGRAM WEBAPP
+   ─────────────────────────────────────────────
+   Inicializa el SDK de Telegram y adapta la UI
+   cuando la app corre dentro del bot.
+══════════════════════════════════════════════ */
+const TG = window.Telegram?.WebApp;
+
+// Detectar si estamos dentro de Telegram
+const EN_TELEGRAM = !!(TG && TG.initData && TG.initData.length > 0);
+
+function inicializarTelegram() {
+  if (!EN_TELEGRAM) return;
+
+  // Expandir la WebApp a pantalla completa
+  TG.expand();
+  TG.ready();
+
+  // Aplicar clase CSS para adaptar colores al tema de Telegram
+  document.body.classList.add('tg-mode');
+
+  // Mostrar banner informativo
+  document.getElementById('tg-banner').classList.add('visible');
+
+  // Si el tema es claro, ajustar acento
+  if (TG.colorScheme === 'light') {
+    document.documentElement.style.setProperty('--green', '#3db51a');
+  }
+
+  // Ocultar botón de notificaciones nativas (Telegram las gestiona)
+  document.getElementById('btn-notif').style.display = 'none';
+  document.getElementById('notif-badge').style.display = 'none';
+
+  console.log('[StreamRadar] Modo Telegram WebApp activo. Usuario:', TG.initDataUnsafe?.user?.first_name);
+}
+
+/* ══════════════════════════════════════════════
+   MÓDULO DE ALERTAS TELEGRAM (Serverless)
+   ─────────────────────────────────────────────
+   Llama al backend serverless para enviar alertas.
+   NINGÚN token ni clave se expone en este frontend.
+══════════════════════════════════════════════ */
+
+// ── Configuración del endpoint serverless ───────────────────────
+// La URL relativa funciona en Netlify (mismo dominio).
+// En desarrollo local con `netlify dev` también resuelve correctamente.
+const ALERT_ENDPOINT = '/api/send-alert';
+
+// ── Clave de autenticación (PÚBLICA OPCIONAL) ────────────────────
+// Si configuraste ALERT_SECRET_KEY en Netlify Y quieres usarla
+// también desde el frontend, ponla aquí. Si la dejas vacía (''),
+// la función serverless la omite y acepta cualquier request.
+// IMPORTANTE: esta clave al estar en el frontend es "semi-pública";
+// su rol es disuasivo (evita spam casual), no criptográfico.
+// Si necesitas seguridad total, deja ALERT_SECRET_KEY vacía en Netlify.
+const ALERT_CLIENT_KEY = '';   // <- pega aquí tu ALERT_SECRET_KEY o déjala vacía
+
+/**
+ * Envía una alerta viral al backend serverless → Telegram.
+ * Retorna { ok: boolean, error?: string, status?: number }
+ * @param {object} datos - Payload del evento
+ */
+async function enviarAlertaServerless(datos) {
+  try {
+    const cabeceras = { 'Content-Type': 'application/json' };
+    if (ALERT_CLIENT_KEY) cabeceras['X-Alert-Key'] = ALERT_CLIENT_KEY;
+
+    const respuesta = await fetch(ALERT_ENDPOINT, {
+      method:  'POST',
+      headers: cabeceras,
+      body:    JSON.stringify(datos),
+    });
+
+    // Intentar leer JSON aunque el status sea error (el backend siempre devuelve JSON)
+    const resultado = await respuesta.json().catch(() => ({ ok: false, error: `HTTP ${respuesta.status}` }));
+
+    if (!respuesta.ok || !resultado.ok) {
+      const motivo = resultado.error || `HTTP ${respuesta.status}`;
+      console.warn(`[StreamRadar] Alerta no enviada (${respuesta.status}):`, motivo);
+      return { ok: false, error: motivo, status: respuesta.status };
+    }
+
+    console.log(`[StreamRadar] ✅ Alerta ${datos.tipo} enviada. Message ID:`, resultado.messageId);
+    return { ok: true, messageId: resultado.messageId };
+
+  } catch (err) {
+    // Error de red (sin conexión, CORS, timeout)
+    console.error('[StreamRadar] Error de red:', err.message);
+    return { ok: false, error: `Error de red: ${err.message}` };
+  }
+}
+
+/**
+ * Alerta de prueba — botón visible tanto en Telegram WebApp como en el
+ * panel derecho del dashboard en navegador. Muestra el error exacto.
+ */
+async function enviarAlertaTestTelegram() {
+  const btn = document.getElementById('tg-test-btn');
+  if (!btn) return;
+  const textoOriginal = btn.textContent;
+  btn.textContent = '⏳ Enviando…';
+  btn.disabled = true;
+
+  const resultado = await enviarAlertaServerless({
+    streamer: 'TEST_STREAMRADAR',
+    tipo:     'INFO',
+    mensaje:  '✅ Conexion con StreamRadar Serverless verificada correctamente.',
+    hora:     fmtTime(peruNow()),
+  });
+
+  if (resultado.ok) {
+    btn.textContent = '✅ Mensaje enviado a Telegram';
+    btn.style.background = '#1a5c08';
+  } else {
+    // Mostrar el error real para facilitar el diagnóstico
+    const desc = resultado.status === 401
+      ? '❌ 401 — Clave X-Alert-Key incorrecta o faltante'
+      : resultado.status === 500
+        ? '❌ 500 — Variables de entorno no configuradas en Netlify'
+        : resultado.status === 502
+          ? '❌ 502 — Token/ChatID inválido en Telegram'
+          : `❌ Error: ${resultado.error || 'desconocido'}`;
+    btn.textContent = desc;
+    btn.style.background = '#5c1a1a';
+    console.error('[StreamRadar] Diagnóstico:', resultado);
+  }
+
+  setTimeout(() => {
+    btn.textContent    = textoOriginal;
+    btn.style.background = '';
+    btn.disabled = false;
+  }, 5000);
+}
+
+/* ══════════════════════════════════════════════
+   LISTA DE STREAMERS
+══════════════════════════════════════════════ */
+const ALL_STREAMERS = [
+  "antonicratv","zullyy_cs","sideral","sachauzumaki",
+  "daarick","emetsuki","elglogloking","cristorata7",
+  "esbebote","jessybaby","jefrain","cirilotv","kingteka","luisormenoa27","butisito"
+];
+
+/* ══════════════════════════════════════════════
+   CONFIGURACIÓN (sliders)
+══════════════════════════════════════════════ */
+let CFG = {
+  hotScore:    40,
+  viralScore:  70,
+  cooldownMs:  45000,
+  emoteWindow: 60000
+};
+
+/* ══════════════════════════════════════════════
+   ESTADO GLOBAL
+══════════════════════════════════════════════ */
+const streams = {};
+let globalSpikeCount = 0;
+let wakeLockSentinel = null;
+let monitorWorker = null;
+let workerTick = 0;
+
+/* ══════════════════════════════════════════════
+   RELOJ PERÚ (UTC-5 fijo)
+══════════════════════════════════════════════ */
+function peruNow() {
+  const utcMs = Date.now() + new Date().getTimezoneOffset() * 60000;
+  return new Date(utcMs - 5 * 3600000);
+}
+function fmtClock(d) { return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())} PET`; }
+function fmtTime(d)  { return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`; }
+function pad(n) { return String(n).padStart(2, '0'); }
+function fmtHMS(ms) {
+  const s = Math.floor(ms / 1000);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sc = s % 60;
+  return h > 0 ? `${pad(h)}:${pad(m)}:${pad(sc)}` : `${pad(m)}:${pad(sc)}`;
+}
+function refreshClock() { document.getElementById('clock').textContent = fmtClock(peruNow()); }
+
+/* ══════════════════════════════════════════════
+   NOTIFICACIONES (solo en modo navegador)
+══════════════════════════════════════════════ */
+function updateNotifUI() {
+  if (EN_TELEGRAM) return; // Telegram gestiona las notificaciones
+  const badge = document.getElementById('notif-badge');
+  const label = document.getElementById('notif-label');
+  const btn   = document.getElementById('btn-notif');
+  if (!('Notification' in window)) { label.textContent = 'No soportado'; btn?.remove(); return; }
+  if (Notification.permission === 'granted') {
+    badge.className = 'notif-badge ok'; label.textContent = 'Notif. ON ✓'; btn.style.display = 'none';
+  } else if (Notification.permission === 'denied') {
+    badge.className = 'notif-badge no'; label.textContent = 'Bloqueado'; btn.style.display = 'none';
+  } else {
+    badge.className = 'notif-badge'; label.textContent = 'Notif. OFF'; btn.style.display = '';
+  }
+}
+function requestNotif() { Notification.requestPermission().then(updateNotifUI); }
+
+function pushNotif(name, tipo, score, mpm) {
+  if (EN_TELEGRAM) return; // En Telegram, la alerta va por el bot (Serverless)
+  if (Notification.permission !== 'granted') return;
+  const emoji = tipo === 'VIRAL' ? '🔥🔥' : '🔥';
+  new Notification(`${emoji} ${tipo} — ${name.toUpperCase()}`, {
+    body: `Score: ${score} · ${mpm} msg/min\n${fmtTime(peruNow())} PET`,
+    icon: 'assets/logos/streamradar_logo.png',
+    tag:  `sr-${name}`,
+    silent: false
+  });
+}
+
+/* ══════════════════════════════════════════════
+   WAKE LOCK
+══════════════════════════════════════════════ */
+async function toggleWakeLock() {
+  const btn = document.getElementById('btn-wl');
+  if (wakeLockSentinel) {
+    await wakeLockSentinel.release().catch(() => {});
+    wakeLockSentinel = null;
+    btn.textContent = '🔆 Pantalla'; btn.classList.remove('on');
+  } else {
+    try {
+      wakeLockSentinel = await navigator.wakeLock.request('screen');
+      btn.textContent = '🔆 ON ✓'; btn.classList.add('on');
+      wakeLockSentinel.addEventListener('release', () => {
+        wakeLockSentinel = null; btn.textContent = '🔆 Pantalla'; btn.classList.remove('on');
+      });
+    } catch { btn.textContent = '🔆 N/A'; }
+  }
+}
+
+/* ══════════════════════════════════════════════
+   AUDIO
+══════════════════════════════════════════════ */
+let _actx = null;
+function getActx() {
+  if (!_actx) _actx = new (window.AudioContext || window.webkitAudioContext)();
+  return _actx;
+}
+document.addEventListener('click', () => getActx(), { once: true });
+
+function beep(freq, dur, vol = 0.07) {
+  try {
+    const ctx  = getActx();
+    const osc  = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = 'sine'; osc.frequency.value = freq;
+    gain.gain.setValueAtTime(vol, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + dur);
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start(); osc.stop(ctx.currentTime + dur);
+  } catch {}
+}
+function playAlert(tipo) {
+  if (tipo === 'VIRAL') {
+    beep(1047,.09,.1); setTimeout(()=>beep(1319,.09,.1),100); setTimeout(()=>beep(1568,.18,.12),200);
+  } else { beep(880,.15,.08); }
+}
+function speak(name, tipo, mpm) {
+  if (!window.speechSynthesis) return;
+  const u = new SpeechSynthesisUtterance(
+    `${tipo === 'VIRAL' ? 'Viral' : 'Chat activo'} en ${name}. ${mpm} mensajes por minuto.`
+  );
+  u.lang = 'es-ES'; u.rate = 1.1; u.volume = .9;
+  window.speechSynthesis.cancel();
+  window.speechSynthesis.speak(u);
+}
+function vib(tipo) { navigator.vibrate?.(tipo === 'VIRAL' ? [200,100,200,100,400] : [180,80,180]); }
+
+/* ══════════════════════════════════════════════
+   CONFIG SLIDERS
+══════════════════════════════════════════════ */
+function toggleCfg() { document.getElementById('cfg-panel').classList.toggle('open'); }
+const cfgMap = {
+  'c-hot':  ['cv-hot',   (v) => { CFG.hotScore   = +v; }, v => v],
+  'c-viral':['cv-viral', (v) => { CFG.viralScore  = +v; }, v => v],
+  'c-cd':   ['cv-cd',    (v) => { CFG.cooldownMs  = +v * 1000; }, v => v + 's'],
+  'c-ew':   ['cv-ew',    (v) => { CFG.emoteWindow = +v * 1000; }, v => v + 's'],
+};
+Object.entries(cfgMap).forEach(([id, [dispId, setter, fmt]]) => {
+  document.getElementById(id).addEventListener('input', function() {
+    document.getElementById(dispId).textContent = fmt(this.value);
+    setter(this.value);
+  });
+});
+
+/* ══════════════════════════════════════════════
+   DETECCIÓN DE EMOTES
+══════════════════════════════════════════════ */
+const EMOTE_RE = /\b([A-Z][a-zA-Z]{1,15}|[A-Z]{2,10})\b/g;
+const ES_FILTER = new Set([
+  'La','El','Los','Las','De','Del','En','Un','Una','Y','O','Que',
+  'Se','Es','Con','Por','Para','Lo','Le','Me','Te','Si','No','Mi','Su',
+  'Al','Yo','Tu','Ni','Ya','Mas','Pero','Como','Muy','Bien','Hola',
+  'Jaja','Jajaja','Gg','Xd','Ok','Np','Lol','Wp','Ez','Rip','Pog'
+]);
+function extractEmotes(text) {
+  const found = [];
+  let m;
+  EMOTE_RE.lastIndex = 0;
+  while ((m = EMOTE_RE.exec(text)) !== null) {
+    const w = m[1];
+    if (!ES_FILTER.has(w)) found.push(w);
+  }
+  return found;
+}
+
+/* ══════════════════════════════════════════════
+   VIRAL SCORE ENGINE (0-100)
+══════════════════════════════════════════════ */
+function calcViralScore(name) {
+  const s = streams[name];
+  const now = Date.now();
+  const winMs = 60000;
+  s.msgBuffer = s.msgBuffer.filter(m => now - m.ts < winMs);
+  if (s.msgBuffer.length === 0) return 0;
+
+  const uniqueInWin = new Set(s.msgBuffer.map(m => m.userId)).size;
+  const userCounts = {};
+  s.msgBuffer.forEach(m => { userCounts[m.userId] = (userCounts[m.userId] || 0) + 1; });
+  const maxUserMsgs  = Math.max(...Object.values(userCounts));
+  const spamFraction = maxUserMsgs / s.msgBuffer.length;
+  const spamPenalty  = spamFraction > 0.4 ? (spamFraction - 0.4) * 1.5 : 0;
+
+  const vmpm     = Math.round((s.msgBuffer.length / 60) * 60);
+  const baseline = calcBaseline(name);
+  let rateScore  = 0;
+  if (baseline > 2) {
+    const ratio = (vmpm - baseline) / Math.max(1, baseline);
+    rateScore = Math.min(40, Math.max(0, ratio * 20));
+  } else if (vmpm > 5) {
+    rateScore = Math.min(30, vmpm * 1.2);
+  }
+
+  const totalInWin = s.msgBuffer.length;
+  const uRatio     = Math.min(1, uniqueInWin / Math.max(1, totalInWin));
+  const userScore  = uRatio * 25;
+
+  s.emoteBuffer = s.emoteBuffer.filter(e => now - e.ts < CFG.emoteWindow);
+  const emoteScore = Math.min(20, s.emoteBuffer.length > 0 ? Math.log2(s.emoteBuffer.length + 1) * 4.5 : 0);
+  const persistScore = Math.min(15, s.consecutiveSpikeCount * 2.5);
+
+  const rawScore = rateScore + userScore + emoteScore + persistScore;
+  return Math.min(100, Math.max(0, Math.round(rawScore * (1 - spamPenalty * 0.5))));
+}
+
+function calcBaseline(name) {
+  const s = streams[name];
+  const elapsedMin = (Date.now() - s.startTime) / 60000;
+  if (elapsedMin < 1) return 0;
+  return Math.round(s.totalMsgs / elapsedMin);
+}
+
+function calcVmpm(name) {
+  const s   = streams[name];
+  const now = Date.now();
+  return Math.round(s.msgBuffer.filter(m => now - m.ts < 60000).length);
+}
+
+function getTopEmotes(name) {
+  const s   = streams[name];
+  const now = Date.now();
+  s.emoteBuffer = s.emoteBuffer.filter(e => now - e.ts < CFG.emoteWindow);
+  const counts = {};
+  s.emoteBuffer.forEach(e => { counts[e.emote] = (counts[e.emote] || 0) + 1; });
+  return Object.entries(counts).sort((a, b) => b[1] - a[1]).slice(0, 6);
+}
+
+function getUniqueUsers(name) {
+  const s   = streams[name];
+  const now = Date.now();
+  const win = s.msgBuffer.filter(m => now - m.ts < 60000);
+  return new Set(win.map(m => m.userId)).size;
+}
+
+/* ══════════════════════════════════════════════
+   SPIKE DETECTION & ALERT
+   — Ahora también dispara alerta al backend serverless
+══════════════════════════════════════════════ */
+function checkSpike(name, score, mpm) {
+  const s   = streams[name];
+  const now = Date.now();
+  if (now - s.lastSpikeTs < CFG.cooldownMs) return;
+  if (score < CFG.hotScore) { s.consecutiveSpikeCount = 0; return; }
+
+  let tipo = score >= CFG.viralScore ? 'VIRAL' : 'HOT';
+  s.lastSpikeTs = now;
+  s.consecutiveSpikeCount++;
+  globalSpikeCount++;
+
+  const elapsedMs  = s.streamStartTs ? now - s.streamStartTs : now - s.startTime;
+  const markStream = fmtHMS(elapsedMs);
+  const peruT      = fmtTime(peruNow());
+  const baseline   = calcBaseline(name);
+
+  // ── Actualizar UI de card ────────────────────────────────
+  const card = document.getElementById(`card-${name}`);
+  if (card) {
+    card.className = `mcard state-${tipo.toLowerCase()}`;
+    const ls = document.getElementById(`ls-${name}`);
+    if (ls) ls.textContent = peruT;
+  }
+
+  // ── Flash en sidebar ─────────────────────────────────────
+  const row = document.getElementById(`sel-${name}`);
+  if (row) { row.classList.add('spike-flash'); setTimeout(() => row.classList.remove('spike-flash'), 2000); }
+
+  // ── Log de alertas en pantalla ───────────────────────────
+  const log  = document.getElementById('alert-log');
+  const item = document.createElement('div');
+  item.className = `aitem t-${tipo.toLowerCase()}`;
+  item.innerHTML = `
+    <span class="an">[${name.toUpperCase()}]</span>
+    ${tipo === 'VIRAL' ? '🔥🔥 VIRAL' : '🔥 HOT'}
+    <div class="am">🕐 ${peruT} PET · min ${markStream} del stream</div>
+    <div class="ast">${mpm} msg/min · base ${baseline} · Score ${score}/100</div>
+  `;
+  log.insertBefore(item, log.firstChild);
+  if (log.children.length > 25) log.removeChild(log.lastChild);
+  document.getElementById('g-spk').textContent = globalSpikeCount;
+
+  // ── Alertas sensoriales ──────────────────────────────────
+  playAlert(tipo);
+  speak(name, tipo, mpm);
+  vib(tipo);
+  pushNotif(name, tipo, score, mpm); // Solo en modo navegador
+
+  // ── Alerta Serverless → Telegram ─────────────────────────
+  // Se ejecuta en segundo plano sin bloquear la UI.
+  // enviarAlertaServerless ya captura todos los errores internamente.
+  enviarAlertaServerless({
+    streamer:    name,
+    tipo,
+    score,
+    mpm,
+    baseline,
+    markStream,
+    hora:        peruT,
+  });
+}
+
+/* ══════════════════════════════════════════════
+   UI UPDATE (cada 3 ticks / ~3s)
+══════════════════════════════════════════════ */
+function updateUI() {
+  let totalMpm = 0, monCount = 0, topName = '—', topMpm = 0;
+
+  Object.keys(streams).forEach(name => {
+    const s = streams[name];
+    if (!s.monitored || !s.isLive) return;
+    monCount++;
+
+    const mpm      = calcVmpm(name);
+    const baseline = calcBaseline(name);
+    const score    = calcViralScore(name);
+    const unique   = getUniqueUsers(name);
+
+    totalMpm += mpm;
+    if (mpm > topMpm) { topMpm = mpm; topName = name; }
+
+    s.sparkHist.push(s.tempBucket);
+    if (s.sparkHist.length > 20) s.sparkHist.shift();
+    s.tempBucket = 0;
+
+    const ratio = baseline > 0 ? Math.round(((mpm - baseline) / Math.max(1, baseline)) * 100) : 0;
+    const rSign = ratio >= 0 ? '+' : '';
+    const $v = (id) => document.getElementById(`${id}-${name}`);
+
+    const vmEl = $v('m-mpm'); if (vmEl) {
+      vmEl.textContent = mpm;
+      vmEl.className   = `v ${score >= CFG.viralScore ? 'c-red' : score >= CFG.hotScore ? 'c-orange' : ''}`;
+    }
+    const blEl = $v('m-bl'); if (blEl) blEl.textContent = baseline;
+    const rtEl = $v('m-rt'); if (rtEl) {
+      rtEl.textContent = `${rSign}${ratio}%`;
+      rtEl.className   = `v ${ratio > 50 ? 'c-red' : ratio > 20 ? 'c-orange' : ratio > 0 ? 'c-green' : 'c-dim'}`;
+    }
+    const vsEl = $v('m-vs'); if (vsEl) {
+      vsEl.textContent = score;
+      vsEl.className   = `v ${score >= CFG.viralScore ? 'c-red' : score >= CFG.hotScore ? 'c-orange' : score > 20 ? 'c-green' : 'c-dim'}`;
+    }
+    const uuEl = $v('m-uu'); if (uuEl) uuEl.textContent = unique;
+    const ttEl = $v('m-tt'); if (ttEl) ttEl.textContent = s.totalMsgs.toLocaleString();
+
+    const ub = document.getElementById(`ub-${name}`);
+    if (ub) {
+      const pct = s.msgBuffer.length > 0 ? Math.min(100, Math.round((unique / s.msgBuffer.length) * 100)) : 0;
+      ub.style.width = pct + '%';
+    }
+
+    const spk = document.getElementById(`spark-${name}`);
+    if (spk) {
+      const bars = spk.querySelectorAll('.spark-bar');
+      const maxV = Math.max(1, ...s.sparkHist);
+      s.sparkHist.forEach((v, i) => {
+        if (!bars[i]) return;
+        bars[i].style.height = Math.max(4, Math.round((v / maxV) * 100)) + '%';
+        bars[i].className    = `spark-bar${v >= maxV * 0.8 ? ' pk' : ''}`;
+      });
+    }
+
+    const emEl = document.getElementById(`emotes-${name}`);
+    if (emEl) {
+      const top = getTopEmotes(name);
+      if (top.length) {
+        const maxEc = top[0][1];
+        emEl.innerHTML = top.map(([e, c]) => {
+          const hot = c >= maxEc * 0.7 ? ' emote-hot' : '';
+          return `<span class="etag${hot}">${e}<span class="ec">×${c}</span></span>`;
+        }).join('');
+      }
+    }
+
+    const card = document.getElementById(`card-${name}`);
+    if (card && score < CFG.hotScore) card.className = 'mcard';
+
+    const rateEl = document.getElementById(`rate-${name}`);
+    if (rateEl) {
+      rateEl.textContent = `${mpm}/m`;
+      rateEl.className   = `sel-rate ${score >= CFG.viralScore ? 'viral' : score >= CFG.hotScore ? 'hot' : ''}`;
+    }
+
+    checkSpike(name, score, mpm);
+  });
+
+  document.getElementById('g-mon').textContent = monCount;
+  document.getElementById('g-mpm').textContent = totalMpm;
+  document.getElementById('g-top').textContent = topName === '—' ? '—' : `${topName} (${topMpm})`;
+}
+
+/* ══════════════════════════════════════════════
+   LIVE TIMER
+══════════════════════════════════════════════ */
+function refreshTimers() {
+  const now = Date.now();
+  Object.keys(streams).forEach(name => {
+    const s = streams[name];
+    if (!s.monitored || !s.isLive) return;
+    const origin = s.streamStartTs || s.startTime;
+    const el     = document.getElementById(`timer-${name}`);
+    if (el) el.textContent = fmtHMS(now - origin);
+  });
+}
+
+/* ══════════════════════════════════════════════
+   WEBSOCKET — chat en vivo de Kick
+══════════════════════════════════════════════ */
+function connectChat(name) {
+  const s = streams[name];
+  if (!s || !s.chatroomId) return;
+  if (s.ws && s.ws.readyState <= 1) return;
+
+  const ws = new WebSocket(
+    'wss://ws-us2.pusher.com/app/32cbd69e4b950bf97679?protocol=7&client=js&version=7.4.0&flash=false'
+  );
+  s.ws = ws;
+
+  ws.onopen = () => {
+    s.wsState = 'active';
+    ws.send(JSON.stringify({
+      event: 'pusher:subscribe',
+      data:  { channel: `chatrooms.${s.chatroomId}.v2` }
+    }));
+    updateDot(name, 'online');
+  };
+
+  ws.onmessage = (ev) => {
+    try {
+      const resp = JSON.parse(ev.data);
+      if (resp.event !== 'App\\Events\\ChatMessageEvent') return;
+      const inner  = JSON.parse(resp.data);
+      const userId = inner?.sender?.id ?? inner?.user_id ?? 'anon';
+      const text   = inner?.content ?? '';
+      const now    = Date.now();
+
+      s.msgBuffer.push({ ts: now, userId });
+      s.totalMsgs++;
+      s.tempBucket++;
+      s.totalUniqueUsers.add(userId);
+
+      extractEmotes(text).forEach(e => s.emoteBuffer.push({ ts: now, emote: e }));
+    } catch {}
+  };
+
+  ws.onerror = () => { s.wsState = 'error'; updateDot(name, 'error'); };
+  ws.onclose = () => {
+    if (s.monitored && s.isLive) {
+      const delay = s._reconnectDelay || 3000;
+      s._reconnectDelay = Math.min(delay * 1.5, 30000);
+      setTimeout(() => connectChat(name), delay);
+    }
+  };
+}
+
+function disconnectChat(name) {
+  const s = streams[name];
+  if (!s) return;
+  if (s.ws) { s.ws.onclose = null; s.ws.close(); s.ws = null; }
+  s.wsState = 'idle';
+  s._reconnectDelay = 3000;
+}
+
+function updateDot(name, state) {
+  const d = document.getElementById(`dot-${name}`);
+  if (d) d.className = `sdot ${state}`;
+}
+
+/* ══════════════════════════════════════════════
+   TOGGLE MONITOREO
+══════════════════════════════════════════════ */
+function setMonitored(name, active) {
+  const s = streams[name];
+  if (!s) return;
+  s.monitored = active;
+
+  const saved = getSavedSelection();
+  if (active) saved.add(name); else saved.delete(name);
+  localStorage.setItem('sr_monitored', JSON.stringify([...saved]));
+
+  const toggle = document.getElementById(`tog-${name}`);
+  if (toggle) toggle.checked = active;
+
+  if (active && s.isLive) {
+    showCard(name);
+    connectChat(name);
+  } else {
+    removeCard(name);
+    disconnectChat(name);
+    const rateEl = document.getElementById(`rate-${name}`);
+    if (rateEl) { rateEl.textContent = ''; rateEl.className = 'sel-rate'; }
+  }
+  updateEmptyState();
+}
+
+function toggleAllMonitored() {
+  const onlineLive = Object.keys(streams).filter(n => streams[n].isLive);
+  const anyOff = onlineLive.some(n => !streams[n].monitored);
+  onlineLive.forEach(n => setMonitored(n, anyOff));
+}
+
+/* ══════════════════════════════════════════════
+   CARD MANAGEMENT
+══════════════════════════════════════════════ */
+function showCard(name) {
+  if (document.getElementById(`card-${name}`)) return;
+  const area = document.getElementById('monitor-area');
+  const card = document.createElement('div');
+  card.className = 'mcard'; card.id = `card-${name}`;
+  card.innerHTML = `
+    <div class="mcard-header">
+      <a class="mcard-name" href="https://kick.com/${name}" target="_blank">${name.toUpperCase()}</a>
+      <span class="stream-timer" id="timer-${name}">00:00</span>
+      <span class="vs-badge b-hot">🔥 HOT</span>
+      <span class="vs-badge b-viral">🔥🔥 VIRAL</span>
+    </div>
+    <div class="mgrid">
+      <div class="mbox"><label>Msgs/min</label><div class="v" id="m-mpm-${name}">0</div></div>
+      <div class="mbox"><label>Baseline</label><div class="v c-blue" id="m-bl-${name}">0</div></div>
+      <div class="mbox"><label>Ratio</label><div class="v c-dim" id="m-rt-${name}">—</div></div>
+      <div class="mbox"><label>Viral Score</label><div class="v c-dim" id="m-vs-${name}">0</div></div>
+      <div class="mbox"><label>Users únicos</label><div class="v c-purple" id="m-uu-${name}">0</div></div>
+      <div class="mbox"><label>Último spike</label><div class="v c-orange" id="ls-${name}">—</div></div>
+    </div>
+    <div class="users-bar-wrap">
+      <span style="color:var(--muted);font-size:.68rem">Diversidad usuarios</span>
+      <div class="users-bar-track"><div class="users-bar-fill" id="ub-${name}" style="width:0%"></div></div>
+      <span style="font-family:var(--mono);font-size:.68rem;color:var(--blue)" id="m-tt-${name}">0 tot</span>
+    </div>
+    <div>
+      <div style="font-size:.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Actividad (60s)</div>
+      <div class="spark" id="spark-${name}">
+        ${Array(20).fill('<div class="spark-bar" style="height:4px"></div>').join('')}
+      </div>
+    </div>
+    <div>
+      <div style="font-size:.62rem;color:var(--muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px">Top emotes · ventana ${CFG.emoteWindow/1000}s</div>
+      <div class="emote-row" id="emotes-${name}">
+        <span style="color:var(--muted);font-size:.7rem">esperando…</span>
+      </div>
+    </div>
+  `;
+  area.appendChild(card);
+}
+
+function removeCard(name) {
+  const card = document.getElementById(`card-${name}`);
+  if (card) card.remove();
+}
+
+function updateEmptyState() {
+  const empty    = document.getElementById('empty-msg');
+  const hasCards = document.querySelectorAll('.mcard').length > 0;
+  empty.style.display = hasCards ? 'none' : '';
+}
+
+/* ══════════════════════════════════════════════
+   FETCH KICK API
+══════════════════════════════════════════════ */
+async function fetchStreamer(name) {
+  try {
+    const resp = await fetch(`https://kick.com/api/v1/channels/${name}`);
+    if (!resp.ok) throw new Error('no-ok');
+    const data   = await resp.json();
+    const live   = !!data?.livestream;
+    const tsRaw  = data?.livestream?.created_at;
+    const roomId = data?.chatroom?.id;
+
+    streams[name].isLive     = live;
+    streams[name].chatroomId = roomId || null;
+    if (tsRaw) streams[name].streamStartTs = new Date(tsRaw).getTime();
+    return live;
+  } catch { return false; }
+}
+
+/* ══════════════════════════════════════════════
+   BUILD LEFT PANEL
+══════════════════════════════════════════════ */
+function buildSelector() {
+  const list  = document.getElementById('sel-list');
+  const saved = getSavedSelection();
+
+  ALL_STREAMERS.forEach(name => {
+    name = name.trim(); // limpiar espacios en el array original
+    streams[name] = {
+      chatroomId: null, streamStartTs: null,
+      ws: null, wsState: 'idle',
+      monitored: false, isLive: false,
+      msgBuffer: [], emoteBuffer: [],
+      totalMsgs: 0, totalUniqueUsers: new Set(),
+      tempBucket: 0, sparkHist: new Array(20).fill(0),
+      lastSpikeTs: 0, lastSpikeScore: 0,
+      consecutiveSpikeCount: 0,
+      startTime: Date.now(),
+      _reconnectDelay: 3000
+    };
+
+    const row = document.createElement('div');
+    row.className = 'sel-item'; row.id = `sel-${name}`;
+    row.innerHTML = `
+      <span class="sdot checking" id="dot-${name}"></span>
+      <span class="sel-name">${name}</span>
+      <span class="sel-rate" id="rate-${name}"></span>
+      <label class="toggle">
+        <input type="checkbox" id="tog-${name}" disabled>
+        <span class="toggle-slider"></span>
+      </label>
+    `;
+    row.addEventListener('click', (e) => {
+      if (e.target.tagName === 'INPUT') return;
+      const tog = document.getElementById(`tog-${name}`);
+      if (!tog.disabled) tog.click();
+    });
+    document.getElementById(`tog-${name}`)?.addEventListener('change', function() {
+      setMonitored(name, this.checked);
+    });
+    list.appendChild(row);
+
+    fetchStreamer(name).then(live => {
+      const dot = document.getElementById(`dot-${name}`);
+      const tog = document.getElementById(`tog-${name}`);
+      if (live) {
+        if (dot) dot.className = 'sdot online';
+        if (tog) tog.disabled = false;
+        if (saved.has(name)) setMonitored(name, true);
+      } else {
+        if (dot) dot.className = 'sdot offline';
+        if (tog) tog.disabled = true;
+      }
+      const onlineN = Object.values(streams).filter(s => s.isLive).length;
+      document.getElementById('online-count').textContent = onlineN;
+    });
+  });
+}
+
+function getSavedSelection() {
+  try { return new Set(JSON.parse(localStorage.getItem('sr_monitored') || '[]')); }
+  catch { return new Set(); }
+}
+
+/* ══════════════════════════════════════════════
+   WEB WORKER — tick 1s preciso
+══════════════════════════════════════════════ */
+function startWorker() {
+  const code = `
+    let id = null;
+    self.onmessage = function(e) {
+      if (e.data === 'start') { if (id) clearInterval(id); id = setInterval(() => self.postMessage('tick'), 1000); }
+      if (e.data === 'stop')  { clearInterval(id); id = null; }
+    };
+  `;
+  let worker;
+  try { worker = new Worker('worker.js'); }
+  catch { worker = new Worker(URL.createObjectURL(new Blob([code], { type: 'application/javascript' }))); }
+
+  const fallbackTimer = setTimeout(() => {
+    worker.terminate();
+    const w2 = new Worker(URL.createObjectURL(new Blob([code], { type: 'application/javascript' })));
+    w2.onmessage = tickHandler;
+    w2.postMessage('start');
+    monitorWorker = w2;
+  }, 2000);
+
+  let hooked = false;
+  worker.onmessage = (e) => {
+    if (e.data === 'tick' && !hooked) {
+      clearTimeout(fallbackTimer);
+      hooked = true;
+      monitorWorker = worker;
+      worker.onmessage = tickHandler;
+      tickHandler(e);
+    }
+  };
+
+  function tickHandler(e) {
+    if (e.data !== 'tick') return;
+    workerTick++;
+    refreshClock();
+    refreshTimers();
+    if (workerTick % 3 === 0) updateUI();
+  }
+
+  worker.onerror = () => {
+    console.warn('[Worker] Falló, usando setInterval como fallback');
+    setInterval(() => {
+      workerTick++;
+      refreshClock();
+      refreshTimers();
+      if (workerTick % 3 === 0) updateUI();
+    }, 1000);
+  };
+
+  worker.postMessage('start');
+  monitorWorker = worker;
+}
+
+/* ══════════════════════════════════════════════
+   BOOT
+══════════════════════════════════════════════ */
+window.addEventListener('DOMContentLoaded', () => {
+  // 1. Inicializar integración Telegram (debe ser lo primero)
+  inicializarTelegram();
+
+  // 2. Construir la app
+  buildSelector();
+  updateNotifUI();
+  startWorker();
+  refreshClock();
+  updateEmptyState();
+
+  // 3. Re-adquirir wake lock al volver a primer plano
+  document.addEventListener('visibilitychange', async () => {
+    if (document.visibilityState === 'visible' && !wakeLockSentinel) {
+      // Silencioso — el usuario debe reactivarlo manualmente
+    }
+  });
+
+  // 4. Service Worker (PWA)
+  if ('serviceWorker' in navigator) {
+    navigator.serviceWorker.register('/sw.js')
+      .then(reg => {
+        console.log('[PWA] SW registrado:', reg.scope);
+        window.addEventListener('beforeinstallprompt', e => {
+          e.preventDefault();
+          window._pwaInstallEvent = e;
+          showInstallBanner();
+        });
+      })
+      .catch(err => console.warn('[PWA] SW no registrado:', err));
+  }
+});
+
+/* ── Banner de instalación PWA ── */
+function showInstallBanner() {
+  if (EN_TELEGRAM) return; // No mostrar dentro de Telegram
+  if (window.matchMedia('(display-mode: standalone)').matches) return;
+
+  const banner = document.createElement('div');
+  banner.id = 'pwa-banner';
+  banner.style.cssText = `
+    position:fixed; bottom:16px; left:50%; transform:translateX(-50%);
+    background:#111720; border:1px solid #53fc18; border-radius:10px;
+    padding:12px 18px; display:flex; align-items:center; gap:12px;
+    z-index:9999; box-shadow:0 4px 20px rgba(0,0,0,.6);
+    font-size:.82rem; color:#dde4ee; max-width:340px; width:90%;
+  `;
+  banner.innerHTML = `
+    <img src="assets/logos/streamradar_logo.png" style="width:36px;height:36px;border-radius:6px;flex-shrink:0">
+    <span style="flex:1">Instala StreamRadar como app para usarla sin navegador</span>
+    <button id="pwa-install-btn" style="background:#53fc18;color:#000;border:none;border-radius:6px;padding:7px 12px;font-weight:800;font-size:.78rem;cursor:pointer;white-space:nowrap;">Instalar</button>
+    <button onclick="document.getElementById('pwa-banner').remove()" style="background:none;border:none;color:#556070;cursor:pointer;font-size:1.1rem;padding:2px 4px;">✕</button>
+  `;
+  document.body.appendChild(banner);
+  document.getElementById('pwa-install-btn').addEventListener('click', async () => {
+    const e = window._pwaInstallEvent;
+    if (!e) return;
+    e.prompt();
+    await e.userChoice;
+    banner.remove();
+  });
+}
+</script>
+</body>
+</html>
